@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 
 # --- Configuration ---
-# Securely access the API key from Streamlit secrets
 try:
     API_KEY = st.secrets["QUICKFS_API_KEY"]
 except (FileNotFoundError, KeyError):
@@ -15,78 +14,81 @@ STOCKS = {
     "APi Group (USA)": "APG:US"
 }
 
-# --- Custom CSS for Material Design (Min Font 1rem) ---
+# --- Enhanced UI/UX CSS ---
 def local_css():
     st.markdown("""
     <style>
-        /* Enforce minimum 1rem across the entire Streamlit App */
-        html, body, .stApp {
+        /* Global Reset & Font Scaling */
+        html, body, [class*="css"] {
+            font-family: 'Inter', 'Roboto', sans-serif; 
             font-size: 1rem;
         }
-
-        /* Metric Card Style */
+        
+        /* MATERIAL CARD DESIGN 
+           Uses Streamlit CSS variables (var(--...)) to support Dark/Light Mode automatically.
+        */
         div.metric-card {
-            background-color: #ffffff;
-            border-radius: 8px;
+            background-color: var(--secondary-background-color); /* Adapts to Dark/Light */
+            border: 1px solid rgba(128, 128, 128, 0.1);
+            border-radius: 12px; /* Softer corners */
             padding: 24px;
-            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); /* Subtle shadow */
             height: 100%;
-            transition: box-shadow 0.2s ease-in-out;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-        }
-        
-        div.metric-card:hover {
-            box-shadow: 0 4px 8px 3px rgba(60,64,67,0.15);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
-        /* Typography Updates for 1rem Minimum */
-        h4.metric-label {
-            font-family: 'Roboto', sans-serif;
-            font-size: 1.1rem; 
-            font-weight: 500;
-            color: #5f6368;
-            margin: 0 0 10px 0;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        /* Hover Effect: Lift card up */
+        div.metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
         }
-        
+
+        /* Label Styling */
+        h4.metric-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-color);
+            opacity: 0.7; /* Muted text for label */
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Value Styling */
         div.metric-value {
-            font-family: 'Google Sans', 'Roboto', sans-serif;
-            font-size: 2.5rem; 
-            font-weight: 400;
-            color: #202124;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--text-color); /* High contrast */
             margin-bottom: 16px;
         }
-        
+
+        /* Description Styling */
         p.metric-desc {
-            font-family: 'Roboto', sans-serif;
-            font-size: 1rem; 
-            line-height: 1.6;
-            color: #70757a;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: var(--text-color);
+            opacity: 0.6; /* Slightly more muted */
             margin: 0;
-            border-top: 1px solid #f1f3f4;
+            border-top: 1px solid rgba(128, 128, 128, 0.1);
             padding-top: 12px;
         }
-        
-        /* Force Streamlit widgets to respect the minimum */
-        .stMarkdown p, .stCaption, .stText, small, label, .stSelectbox label {
-            font-size: 1rem !important;
-        }
-        
-        /* Adjust layout spacing */
+
+        /* Layout Tweaks */
         .block-container {
             padding-top: 2rem;
-            padding-bottom: 2rem;
+            padding-bottom: 3rem;
         }
+        
+        /* Remove default Streamlit top padding */
+        header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
 # --- Helper Functions ---
 def fetch_quickfs_data(ticker, api_key):
-    """Fetches full financial data from QuickFS API."""
     url = f"https://public-api.quickfs.net/v1/data/all-data/{ticker}?api_key={api_key}"
     try:
         response = requests.get(url)
@@ -97,25 +99,16 @@ def fetch_quickfs_data(ticker, api_key):
         return None
 
 def extract_ttm_metric(data, metric_key):
-    """
-    Extracts TTM value, prioritizing explicit TTM keys or summing last 4 quarters.
-    
-    Args:
-        data: The JSON response from QuickFS.
-        metric_key: A string key OR a list of string keys to try (fallback mechanism).
-    """
     try:
         financials = data.get("data", {}).get("financials", {})
-        
-        # Normalize input to a list of keys to check
         keys_to_check = [metric_key] if isinstance(metric_key, str) else metric_key
         
-        # 1. Try explicit TTM for all candidate keys
+        # 1. Explicit TTM
         for key in keys_to_check:
             if "ttm" in financials and key in financials["ttm"]:
                 return financials["ttm"][key]
             
-        # 2. Fallback: Sum last 4 quarters for all candidate keys
+        # 2. Quarterly Sum Fallback
         quarterly = financials.get("quarterly", {})
         for key in keys_to_check:
             if key in quarterly:
@@ -124,13 +117,11 @@ def extract_ttm_metric(data, metric_key):
                     valid_values = [v for v in values if v is not None]
                     if len(valid_values) >= 4:
                         return sum(valid_values[-4:])
-        
         return None
     except Exception:
         return None
 
 def format_currency(value, currency_symbol="$"):
-    """Formats large numbers (e.g., 1.2B, 500M)."""
     if value is None: return "N/A"
     abs_val = abs(value)
     if abs_val >= 1_000_000_000:
@@ -140,10 +131,13 @@ def format_currency(value, currency_symbol="$"):
     else:
         return f"{currency_symbol}{value:,.2f}"
 
-def render_card(label, value_str, description):
-    """Renders a HTML card component."""
+def render_card(label, value_str, description, accent_color="#4285F4"):
+    """
+    Renders a HTML card with a colored accent border.
+    accent_color: Hex code for the top border (e.g., Blue for Income, Green for Cash).
+    """
     html = f"""
-    <div class="metric-card">
+    <div class="metric-card" style="border-top: 4px solid {accent_color};">
         <div>
             <h4 class="metric-label">{label}</h4>
             <div class="metric-value">{value_str}</div>
@@ -154,16 +148,17 @@ def render_card(label, value_str, description):
     st.markdown(html, unsafe_allow_html=True)
 
 # --- Main App Logic ---
-st.set_page_config(page_title="Financial Analyst Dashboard", layout="wide")
+st.set_page_config(page_title="Financial Dashboard", layout="wide")
 local_css()
 
 # Sidebar
 with st.sidebar:
-    st.markdown("## Search")
+    st.header("Search")
     selected_stock_name = st.selectbox("Select Stock", list(STOCKS.keys()))
     selected_ticker = STOCKS[selected_stock_name]
-    st.markdown("---")
-    st.markdown("Data source: **QuickFS API**")
+    st.divider()
+    st.caption("Data source: **QuickFS API**")
+    st.caption("ℹ️ *To enable Dark Mode, go to Settings (top right) → Theme → Dark.*")
 
 # Main Content
 json_data = fetch_quickfs_data(selected_ticker, API_KEY)
@@ -173,8 +168,16 @@ if json_data:
     currency = meta.get("currency", "USD")
     curr_sym = "$" if currency == "USD" else (currency + " ")
 
-    st.markdown(f"## {selected_stock_name} <span style='font-size:1.5rem; color: #5f6368'>({selected_ticker})</span>", unsafe_allow_html=True)
-    st.markdown("---")
+    # Header Section
+    col_head1, col_head2 = st.columns([3, 1])
+    with col_head1:
+        st.title(f"{selected_stock_name}")
+        st.markdown(f"#### Ticker: **{selected_ticker}**")
+    with col_head2:
+        # Just a visual spacer or status
+        st.empty()
+
+    st.divider()
 
     # --- Data Prep ---
     rev = extract_ttm_metric(json_data, "revenue")
@@ -184,46 +187,52 @@ if json_data:
     ni = extract_ttm_metric(json_data, "net_income")
     eps = extract_ttm_metric(json_data, "eps_diluted")
     
-    # NOPAT Calc (EBIT - Tax)
+    # NOPAT Calc
     tax = extract_ttm_metric(json_data, "income_tax")
     if op is not None and tax is not None:
         nopat = op - tax
     elif op is not None:
-        # Fallback 21% tax assumption
         nopat = op * (1 - 0.21)
     else:
         nopat = None
 
-    # FIX: Try "cf_cfo" first, fallback to "cfo" if missing
     ocf = extract_ttm_metric(json_data, ["cf_cfo", "cfo"]) 
     fcf = extract_ttm_metric(json_data, "fcf")
 
-    # --- Section 1: Income Statement ---
-    st.subheader("Income Statement")
+    # --- Section 1: Income Statement (Blue Accent) ---
+    st.subheader("📊 Income Statement")
+    
+    # Colors
+    c_income = "#3b82f6" # Blue
     
     # Row 1
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.")
-    with c2: render_card("Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods. Shows production efficiency.")
-    with c3: render_card("Operating Profit (EBIT)", format_currency(op, curr_sym), "Profit from core operations before interest/tax.")
-    with c4: render_card("EBITDA", format_currency(ebitda, curr_sym), "Proxy for operational cash flow (excludes non-cash items).")
+    with c1: render_card("Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.", c_income)
+    with c2: render_card("Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods.", c_income)
+    with c3: render_card("Operating Profit", format_currency(op, curr_sym), "Core business profit (EBIT).", c_income)
+    with c4: render_card("EBITDA", format_currency(ebitda, curr_sym), "Operational cash flow proxy.", c_income)
+    
+    st.markdown(" ") # Spacer
     
     # Row 2
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("NOPAT", format_currency(nopat, curr_sym), "Potential cash earnings if the company had no debt.")
-    with c2: render_card("Net Income", format_currency(ni, curr_sym), "Total earnings for shareholders after all costs.")
-    with c3: render_card("EPS (Diluted)", f"{curr_sym}{eps:.2f}" if eps else "N/A", "Profit attributed to each share.")
+    with c1: render_card("NOPAT", format_currency(nopat, curr_sym), "Profit if company had no debt.", c_income)
+    with c2: render_card("Net Income", format_currency(ni, curr_sym), "The 'Bottom Line' earnings.", c_income)
+    with c3: render_card("EPS (Diluted)", f"{curr_sym}{eps:.2f}" if eps else "N/A", "Profit attributed to each share.", c_income)
     with c4: st.empty() 
 
     st.markdown("---")
 
-    # --- Section 2: Cash Flow ---
-    st.subheader("Cash Flow")
+    # --- Section 2: Cash Flow (Green Accent) ---
+    st.subheader("💸 Cash Flow")
+    
+    # Colors
+    c_cash = "#10b981" # Green
     
     # Row 3
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("Operating Cash Flow", format_currency(ocf, curr_sym), "Cash generated from actual business operations.")
-    with c2: render_card("Free Cash Flow", format_currency(fcf, curr_sym), "Cash remaining after CapEx. The 'real' owner's earnings.")
+    with c1: render_card("Operating Cash Flow", format_currency(ocf, curr_sym), "Cash from actual operations.", c_cash)
+    with c2: render_card("Free Cash Flow", format_currency(fcf, curr_sym), "Cash remaining after CapEx.", c_cash)
     with c3: st.empty()
     with c4: st.empty()
 
