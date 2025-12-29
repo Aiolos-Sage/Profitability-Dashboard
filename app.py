@@ -206,7 +206,7 @@ if json_data:
     c_income = "#3b82f6"
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("1. Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.", c_income)
+    with c1: render_card("1. Revenue", format_currency(rev, curr_sym), "Top-line sales indicate market demand for the product or service and the size of the operation.", c_income)
     with c2: render_card("2. Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods.", c_income)
     with c3: render_card("3. Operating Profit", format_currency(op, curr_sym), "Core business profit (EBIT).", c_income)
     with c4: render_card("4. EBITDA", format_currency(ebitda, curr_sym), "Operational cash flow proxy.", c_income)
