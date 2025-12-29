@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import time
 
 # --- Configuration ---
 try:
@@ -14,25 +15,18 @@ STOCKS = {
     "APi Group (USA)": "APG:US"
 }
 
-# --- Enhanced UI/UX CSS ---
+# --- CSS for Material Design ---
 def local_css():
     st.markdown("""
     <style>
-        /* Global Reset & Font Scaling */
-        html, body, [class*="css"] {
-            font-family: 'Inter', 'Roboto', sans-serif; 
-            font-size: 1rem;
-        }
+        html, body, [class*="css"] { font-family: 'Inter', 'Roboto', sans-serif; font-size: 1rem; }
         
-        /* MATERIAL CARD DESIGN 
-           Uses Streamlit CSS variables (var(--...)) to support Dark/Light Mode automatically.
-        */
         div.metric-card {
-            background-color: var(--secondary-background-color); /* Adapts to Dark/Light */
+            background-color: var(--secondary-background-color);
             border: 1px solid rgba(128, 128, 128, 0.1);
-            border-radius: 12px; /* Softer corners */
+            border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             height: 100%;
             display: flex;
             flex-direction: column;
@@ -40,75 +34,92 @@ def local_css():
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
-        /* Hover Effect: Lift card up */
         div.metric-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
         }
 
-        /* Label Styling */
         h4.metric-label {
             font-size: 0.9rem;
             font-weight: 600;
             color: var(--text-color);
-            opacity: 0.7; /* Muted text for label */
+            opacity: 0.7;
             margin: 0 0 8px 0;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
-        /* Value Styling */
         div.metric-value {
             font-size: 2.2rem;
             font-weight: 700;
-            color: var(--text-color); /* High contrast */
+            color: var(--text-color);
             margin-bottom: 16px;
         }
 
-        /* Description Styling */
         p.metric-desc {
             font-size: 0.95rem;
             line-height: 1.5;
             color: var(--text-color);
-            opacity: 0.6; /* Slightly more muted */
+            opacity: 0.6;
             margin: 0;
             border-top: 1px solid rgba(128, 128, 128, 0.1);
             padding-top: 12px;
         }
-
-        /* Layout Tweaks */
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 3rem;
-        }
         
-        /* Remove default Streamlit top padding */
-        header {visibility: hidden;}
+        /* Error Box Styling */
+        .stAlert {
+            border-radius: 8px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-# --- Helper Functions ---
-def fetch_quickfs_data(ticker, api_key):
+# --- Robust Data Fetching ---
+def fetch_quickfs_data(ticker, api_key, retries=2):
+    """
+    Fetches data with retry logic and error handling.
+    Retries twice if a 500 error occurs.
+    """
     url = f"https://public-api.quickfs.net/v1/data/all-data/{ticker}?api_key={api_key}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching data: {e}")
-        return None
+    
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(url)
+            
+            # If successful, return JSON
+            if response.status_code == 200:
+                return response.json()
+            
+            # If server error (500), wait and retry
+            elif response.status_code >= 500:
+                if attempt < retries:
+                    time.sleep(1) # Wait 1 second before retrying
+                    continue
+                else:
+                    st.error(f"❌ QuickFS Server Error (500) for {ticker}. The API is temporarily down for this stock.")
+                    return None
+            
+            # Client errors (404, 401, etc)
+            else:
+                st.error(f"❌ Error {response.status_code}: {response.reason} for {ticker}")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"🚨 Connection Error: {e}")
+            return None
+    return None
 
 def extract_ttm_metric(data, metric_key):
+    """Handles both explicit TTM keys and fallback lists (e.g. ['cf_cfo', 'cfo'])"""
     try:
         financials = data.get("data", {}).get("financials", {})
         keys_to_check = [metric_key] if isinstance(metric_key, str) else metric_key
         
-        # 1. Explicit TTM
+        # 1. Try explicit TTM
         for key in keys_to_check:
             if "ttm" in financials and key in financials["ttm"]:
                 return financials["ttm"][key]
             
-        # 2. Quarterly Sum Fallback
+        # 2. Try Quarterly Sum
         quarterly = financials.get("quarterly", {})
         for key in keys_to_check:
             if key in quarterly:
@@ -132,10 +143,6 @@ def format_currency(value, currency_symbol="$"):
         return f"{currency_symbol}{value:,.2f}"
 
 def render_card(label, value_str, description, accent_color="#4285F4"):
-    """
-    Renders a HTML card with a colored accent border.
-    accent_color: Hex code for the top border (e.g., Blue for Income, Green for Cash).
-    """
     html = f"""
     <div class="metric-card" style="border-top: 4px solid {accent_color};">
         <div>
@@ -147,7 +154,7 @@ def render_card(label, value_str, description, accent_color="#4285F4"):
     """
     st.markdown(html, unsafe_allow_html=True)
 
-# --- Main App Logic ---
+# --- Main App ---
 st.set_page_config(page_title="Financial Dashboard", layout="wide")
 local_css()
 
@@ -158,7 +165,6 @@ with st.sidebar:
     selected_ticker = STOCKS[selected_stock_name]
     st.divider()
     st.caption("Data source: **QuickFS API**")
-    st.caption("ℹ️ *To enable Dark Mode, go to Settings (top right) → Theme → Dark.*")
 
 # Main Content
 json_data = fetch_quickfs_data(selected_ticker, API_KEY)
@@ -168,18 +174,14 @@ if json_data:
     currency = meta.get("currency", "USD")
     curr_sym = "$" if currency == "USD" else (currency + " ")
 
-    # Header Section
-    col_head1, col_head2 = st.columns([3, 1])
-    with col_head1:
+    col1, col2 = st.columns([3, 1])
+    with col1:
         st.title(f"{selected_stock_name}")
         st.markdown(f"#### Ticker: **{selected_ticker}**")
-    with col_head2:
-        # Just a visual spacer or status
-        st.empty()
-
+    
     st.divider()
 
-    # --- Data Prep ---
+    # --- Data Extraction ---
     rev = extract_ttm_metric(json_data, "revenue")
     gp = extract_ttm_metric(json_data, "gross_profit")
     op = extract_ttm_metric(json_data, "operating_income")
@@ -187,7 +189,6 @@ if json_data:
     ni = extract_ttm_metric(json_data, "net_income")
     eps = extract_ttm_metric(json_data, "eps_diluted")
     
-    # NOPAT Calc
     tax = extract_ttm_metric(json_data, "income_tax")
     if op is not None and tax is not None:
         nopat = op - tax
@@ -196,25 +197,22 @@ if json_data:
     else:
         nopat = None
 
+    # THE FIX FOR N/A: Check cf_cfo first, then cfo
     ocf = extract_ttm_metric(json_data, ["cf_cfo", "cfo"]) 
     fcf = extract_ttm_metric(json_data, "fcf")
 
-    # --- Section 1: Income Statement (Blue Accent) ---
+    # --- Income Statement ---
     st.subheader("📊 Income Statement")
+    c_income = "#3b82f6"
     
-    # Colors
-    c_income = "#3b82f6" # Blue
-    
-    # Row 1
     c1, c2, c3, c4 = st.columns(4)
     with c1: render_card("Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.", c_income)
     with c2: render_card("Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods.", c_income)
     with c3: render_card("Operating Profit", format_currency(op, curr_sym), "Core business profit (EBIT).", c_income)
     with c4: render_card("EBITDA", format_currency(ebitda, curr_sym), "Operational cash flow proxy.", c_income)
     
-    st.markdown(" ") # Spacer
+    st.markdown(" ") 
     
-    # Row 2
     c1, c2, c3, c4 = st.columns(4)
     with c1: render_card("NOPAT", format_currency(nopat, curr_sym), "Profit if company had no debt.", c_income)
     with c2: render_card("Net Income", format_currency(ni, curr_sym), "The 'Bottom Line' earnings.", c_income)
@@ -223,18 +221,12 @@ if json_data:
 
     st.markdown("---")
 
-    # --- Section 2: Cash Flow (Green Accent) ---
+    # --- Cash Flow ---
     st.subheader("💸 Cash Flow")
+    c_cash = "#10b981"
     
-    # Colors
-    c_cash = "#10b981" # Green
-    
-    # Row 3
     c1, c2, c3, c4 = st.columns(4)
     with c1: render_card("Operating Cash Flow", format_currency(ocf, curr_sym), "Cash from actual operations.", c_cash)
     with c2: render_card("Free Cash Flow", format_currency(fcf, curr_sym), "Cash remaining after CapEx.", c_cash)
     with c3: st.empty()
     with c4: st.empty()
-
-else:
-    st.error("Failed to load data. Please check your connection or API key.")
