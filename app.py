@@ -206,17 +206,17 @@ if json_data:
     c_income = "#3b82f6"
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.", c_income)
-    with c2: render_card("Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods.", c_income)
-    with c3: render_card("Operating Profit", format_currency(op, curr_sym), "Core business profit (EBIT).", c_income)
-    with c4: render_card("EBITDA", format_currency(ebitda, curr_sym), "Operational cash flow proxy.", c_income)
+    with c1: render_card("1. Revenue", format_currency(rev, curr_sym), "Top-line sales indicating market demand.", c_income)
+    with c2: render_card("2. Gross Profit", format_currency(gp, curr_sym), "Revenue minus cost of goods.", c_income)
+    with c3: render_card("3. Operating Profit", format_currency(op, curr_sym), "Core business profit (EBIT).", c_income)
+    with c4: render_card("4. EBITDA", format_currency(ebitda, curr_sym), "Operational cash flow proxy.", c_income)
     
     st.markdown(" ") 
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("NOPAT", format_currency(nopat, curr_sym), "Profit if company had no debt.", c_income)
-    with c2: render_card("Net Income", format_currency(ni, curr_sym), "The 'Bottom Line' earnings.", c_income)
-    with c3: render_card("EPS (Diluted)", f"{curr_sym}{eps:.2f}" if eps else "N/A", "Profit attributed to each share.", c_income)
+    with c1: render_card("5. NOPAT", format_currency(nopat, curr_sym), "Profit if company had no debt.", c_income)
+    with c2: render_card("6. Net Income", format_currency(ni, curr_sym), "The 'Bottom Line' earnings.", c_income)
+    with c3: render_card("7. EPS (Diluted)", f"{curr_sym}{eps:.2f}" if eps else "N/A", "Profit attributed to each share.", c_income)
     with c4: st.empty() 
 
     st.markdown("---")
@@ -226,7 +226,7 @@ if json_data:
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("Operating Cash Flow", format_currency(ocf, curr_sym), "Cash from actual operations.", c_cash)
-    with c2: render_card("Free Cash Flow", format_currency(fcf, curr_sym), "Cash remaining after CapEx.", c_cash)
+    with c1: render_card("1. Operating Cash Flow", format_currency(ocf, curr_sym), "Cash from actual operations.", c_cash)
+    with c2: render_card("2. Free Cash Flow", format_currency(fcf, curr_sym), "Cash remaining after CapEx.", c_cash)
     with c3: st.empty()
     with c4: st.empty()
