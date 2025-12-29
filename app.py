@@ -15,101 +15,137 @@ STOCKS = {
     "APi Group (USA)": "APG:US"
 }
 
-# --- CSS for Material Design ---
-def local_css():
-    st.markdown("""
+# --- Session State for Dark Mode ---
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+def toggle_dark_mode():
+    st.session_state.dark_mode = not st.session_state.dark_mode
+
+# --- Dynamic CSS ---
+def local_css(is_dark):
+    # Define colors based on mode
+    if is_dark:
+        bg_color = "#0e1117"
+        text_color = "#fafafa"
+        card_bg = "#262730"
+        border_color = "rgba(250, 250, 250, 0.1)"
+        shadow_color = "rgba(0, 0, 0, 0.3)"
+        label_color = "#d0d0d0"
+        desc_color = "#b0b0b0"
+    else:
+        bg_color = "#ffffff"
+        text_color = "#000000"
+        card_bg = "#ffffff"
+        border_color = "rgba(128, 128, 128, 0.1)"
+        shadow_color = "rgba(0, 0, 0, 0.05)"
+        label_color = "#5f6368"
+        desc_color = "#70757a"
+
+    st.markdown(f"""
     <style>
-        html, body, [class*="css"] { font-family: 'Inter', 'Roboto', sans-serif; font-size: 1rem; }
+        /* Force App Background */
+        .stApp {{
+            background-color: {bg_color};
+            color: {text_color};
+        }}
         
-        div.metric-card {
-            background-color: var(--secondary-background-color);
-            border: 1px solid rgba(128, 128, 128, 0.1);
+        /* Global Font */
+        html, body, [class*="css"] {{ 
+            font-family: 'Inter', 'Roboto', sans-serif; 
+            font-size: 1rem; 
+            color: {text_color};
+        }}
+        
+        /* Metric Card Style */
+        div.metric-card {{
+            background-color: {card_bg};
+            border: 1px solid {border_color};
             border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 6px {shadow_color};
             height: 100%;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
+        }}
 
-        div.metric-card:hover {
+        div.metric-card:hover {{
             transform: translateY(-5px);
-            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
-        }
+            box-shadow: 0 10px 15px {shadow_color};
+        }}
 
-        h4.metric-label {
+        h4.metric-label {{
             font-size: 0.9rem;
             font-weight: 600;
-            color: var(--text-color);
-            opacity: 0.7;
+            color: {label_color};
+            opacity: 0.9;
             margin: 0 0 8px 0;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-        }
+        }}
 
-        div.metric-value {
+        div.metric-value {{
             font-size: 2.2rem;
             font-weight: 700;
-            color: var(--text-color);
+            color: {text_color};
             margin-bottom: 16px;
-        }
+        }}
 
-        p.metric-desc {
-            font-size: 0.95rem;
+        /* Bullet Point Description Styling */
+        div.metric-desc {{
+            font-size: 0.9rem;
             line-height: 1.5;
-            color: var(--text-color);
-            opacity: 0.6;
+            color: {desc_color};
             margin: 0;
-            border-top: 1px solid rgba(128, 128, 128, 0.1);
+            border-top: 1px solid {border_color};
             padding-top: 12px;
-        }
+        }}
         
-        /* Error Box Styling */
-        .stAlert {
-            border-radius: 8px;
-        }
+        div.metric-desc ul {{
+            padding-left: 20px;
+            margin: 0;
+        }}
+        
+        div.metric-desc li {{
+            margin-bottom: 6px;
+        }}
+
+        /* Streamlit Element Overrides */
+        h1, h2, h3, h4, h5, h6, .stMarkdown, .stText {{
+            color: {text_color} !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
 # --- Robust Data Fetching ---
 def fetch_quickfs_data(ticker, api_key, retries=2):
-    """
-    Fetches data with retry logic and error handling.
-    Retries twice if a 500 error occurs.
-    """
+    """Fetches data with retry logic and error handling."""
     url = f"https://public-api.quickfs.net/v1/data/all-data/{ticker}?api_key={api_key}"
     
     for attempt in range(retries + 1):
         try:
             response = requests.get(url)
-            
-            # If successful, return JSON
             if response.status_code == 200:
                 return response.json()
-            
-            # If server error (500), wait and retry
             elif response.status_code >= 500:
                 if attempt < retries:
-                    time.sleep(1) # Wait 1 second before retrying
+                    time.sleep(1)
                     continue
                 else:
                     st.error(f"❌ QuickFS Server Error (500) for {ticker}. The API is temporarily down for this stock.")
                     return None
-            
-            # Client errors (404, 401, etc)
             else:
                 st.error(f"❌ Error {response.status_code}: {response.reason} for {ticker}")
                 return None
-
         except requests.exceptions.RequestException as e:
             st.error(f"🚨 Connection Error: {e}")
             return None
     return None
 
 def extract_ttm_metric(data, metric_key):
-    """Handles both explicit TTM keys and fallback lists (e.g. ['cf_cfo', 'cfo'])"""
+    """Handles explicit TTM keys and fallback lists."""
     try:
         financials = data.get("data", {}).get("financials", {})
         keys_to_check = [metric_key] if isinstance(metric_key, str) else metric_key
@@ -142,29 +178,37 @@ def format_currency(value, currency_symbol="$"):
     else:
         return f"{currency_symbol}{value:,.2f}"
 
-def render_card(label, value_str, description, accent_color="#4285F4"):
+def render_card(label, value_str, description_html, accent_color="#4285F4"):
     html = f"""
     <div class="metric-card" style="border-top: 4px solid {accent_color};">
         <div>
             <h4 class="metric-label">{label}</h4>
             <div class="metric-value">{value_str}</div>
         </div>
-        <p class="metric-desc">{description}</p>
+        <div class="metric-desc">{description_html}</div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
 
 # --- Main App ---
 st.set_page_config(page_title="Financial Dashboard", layout="wide")
-local_css()
 
 # Sidebar
 with st.sidebar:
     st.header("Search")
     selected_stock_name = st.selectbox("Select Stock", list(STOCKS.keys()))
     selected_ticker = STOCKS[selected_stock_name]
-    st.divider()
+    
+    st.markdown("---")
+    
+    # Dark Mode Toggle
+    st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, on_change=toggle_dark_mode)
+    
+    st.markdown("---")
     st.caption("Data source: **QuickFS API**")
+
+# Apply CSS based on state
+local_css(st.session_state.dark_mode)
 
 # Main Content
 json_data = fetch_quickfs_data(selected_ticker, API_KEY)
@@ -197,26 +241,91 @@ if json_data:
     else:
         nopat = None
 
-    # THE FIX FOR N/A: Check cf_cfo first, then cfo
+    # N/A Fix: Check cf_cfo first, then cfo
     ocf = extract_ttm_metric(json_data, ["cf_cfo", "cfo"]) 
     fcf = extract_ttm_metric(json_data, "fcf")
+
+    # --- Explanations (Bullet Points) ---
+    desc_revenue = """
+    <ul>
+        <li>Top-line sales indicate market demand for the product.</li>
+        <li>Reflects the sheer scale of operations.</li>
+    </ul>
+    """
+    desc_gp = """
+    <ul>
+        <li>Revenue minus Cost of Goods Sold (COGS).</li>
+        <li>Measures production efficiency; negative values imply losses on every unit.</li>
+        <li>COGS includes raw materials, labor, and machinery.</li>
+    </ul>
+    """
+    desc_op = """
+    <ul>
+        <li>Gross Profit minus Operating Expenses (Marketing, R&D, G&A).</li>
+        <li>Core business profitability before taxes and interest.</li>
+        <li>Excludes financing costs to show true operational viability.</li>
+    </ul>
+    """
+    desc_ebitda = """
+    <ul>
+        <li>Earnings Before Interest, Taxes, Depreciation, and Amortization.</li>
+        <li>A proxy for operational cash flow by stripping out non-cash charges.</li>
+        <li>Key metric for valuation in tech and infrastructure.</li>
+    </ul>
+    """
+    desc_nopat = """
+    <ul>
+        <li>Net Operating Profit After Tax.</li>
+        <li>Formula: EBIT × (1 − Tax Rate).</li>
+        <li>Shows potential cash earnings if the company were debt-free.</li>
+        <li>Crucial for ROIC analysis and comparing leveraged companies.</li>
+    </ul>
+    """
+    desc_ni = """
+    <ul>
+        <li>The "Bottom Line" profit for shareholders.</li>
+        <li>Deducts all expenses, interest to banks, and taxes.</li>
+        <li>The official figure used for P/E ratios.</li>
+    </ul>
+    """
+    desc_eps = """
+    <ul>
+        <li>Net Income divided by shares outstanding.</li>
+        <li>Indicates profit attributed to a single share.</li>
+        <li>Primary driver of stock price appreciation.</li>
+    </ul>
+    """
+    desc_ocf = """
+    <ul>
+        <li>Cash actually generated from day-to-day operations.</li>
+        <li>Adjusts Net Income for non-cash items and working capital.</li>
+        <li>Ignores sales made on credit until cash is collected.</li>
+    </ul>
+    """
+    desc_fcf = """
+    <ul>
+        <li>Cash remaining after operating costs and CapEx.</li>
+        <li>Represents "truly free" money for dividends or buybacks.</li>
+        <li>The real owner's earnings used for reinvestment.</li>
+    </ul>
+    """
 
     # --- Income Statement ---
     st.subheader("📊 Income Statement")
     c_income = "#3b82f6"
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("1. Revenue (Sales) — Top-Line", format_currency(rev, curr_sym), "Top-line sales indicate market demand for the product or service and the size of the operation.", c_income)
-    with c2: render_card("2. Gross Profit (Production Efficiency)", format_currency(gp, curr_sym), "Gross profit equals revenue minus the cost of goods sold. It measures a company’s production efficiency—if it’s negative, the company loses money on each product before covering overhead expenses like rent or salaries. COGS (cost of goods sold) includes raw materials, manufacturing costs, and depreciation on production assets such as machinery, factory buildings, production robots, tools and vehicles used in the manufacturing process.", c_income)
-    with c3: render_card("3. Operating Profit / EBIT (Profitability)", format_currency(op, curr_sym), "Operating profit equals gross profit minus operating expenses such as marketing, G&A, R&D, and depreciation. G&A (General and Administrative) covers indirect business costs like office rent, utilities, administrative salaries, and insurance, while R&D (Research and Development) covers costs to create or improve products, such as engineers’ salaries, lab work, and testing. It is a key measure of how profitable the core business is, without the effects of taxes and financing decisions.", c_income)
-    with c4: render_card("4. EBITDA (Operating Profit)", format_currency(ebitda, curr_sym), "EBITDA stands for Earnings Before Interest, Taxes, Depreciation, and Amortization. It is calculated as operating profit plus depreciation and amortization, and is often used as a proxy for cash flow because non-cash charges like depreciation do not represent actual cash outflows. This makes EBITDA a popular metric for valuing companies, especially in tech and infrastructure sectors, as it focuses on operational cash generation before financing and tax effects.", c_income)
+    with c1: render_card("1. Revenue", format_currency(rev, curr_sym), desc_revenue, c_income)
+    with c2: render_card("2. Gross Profit", format_currency(gp, curr_sym), desc_gp, c_income)
+    with c3: render_card("3. Operating Profit", format_currency(op, curr_sym), desc_op, c_income)
+    with c4: render_card("4. EBITDA", format_currency(ebitda, curr_sym), desc_ebitda, c_income)
     
     st.markdown(" ") 
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("5. NOPAT (After-Tax Operating Profit)", format_currency(nopat, curr_sym), "NOPAT shows the capital allocation efficiency, or how much profit a business makes from its operations after an estimate of taxes, but without including the effects of debt or interest. It is calculated using the formula: NOPAT = EBIT × (1 − Tax Rate). It allows investors to compare companies with different levels of debt (leverage) on an apples-to-apples basis. This “clean” operating profit is commonly used in return metrics like ROIC to assess how efficiently a company uses its capital to generate profits.", c_income)
-    with c2: render_card("6. Net Income (Earnings) — Bottom-Line Profit", format_currency(ni, curr_sym), "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.", c_income)
-    with c3: render_card("7. Earnings Per Share (EPS)", f"{curr_sym}{eps:.2f}" if eps else "N/A", "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.​", c_income)
+    with c1: render_card("5. NOPAT", format_currency(nopat, curr_sym), desc_nopat, c_income)
+    with c2: render_card("6. Net Income", format_currency(ni, curr_sym), desc_ni, c_income)
+    with c3: render_card("7. EPS (Diluted)", f"{curr_sym}{eps:.2f}" if eps else "N/A", desc_eps, c_income)
     with c4: st.empty() 
 
     st.markdown("---")
@@ -226,7 +335,11 @@ if json_data:
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("8. Operating Cash Flow", format_currency(ocf, curr_sym), "Operating cash flow is the cash from operations that actually comes into or leaves the company from its day-to-day business activities. It adjusts net income for non-cash items and changes in working capital, so sales made on credit (like unpaid invoices in accounts receivable) increase net income but do not increase operating cash flow until the cash is collected.", c_cash)
-    with c2: render_card("9. Free Cash Flow (Truly Free Money)", format_currency(fcf, curr_sym), "Free cash flow (FCF) is the cash left over after a company pays for its operating costs and necessary investments in equipment and machinery (CapEx). It represents the truly free money that can be used to pay dividends, buy back shares, or reinvest in growth without hurting the existing business, and because it’s calculated after interest in most cases, it shows how much cash is left for shareholders after servicing debt.", c_cash)
+    with c1: render_card("8. Operating Cash Flow", format_currency(ocf, curr_sym), desc_ocf, c_cash)
+    with c2: render_card("9. Free Cash Flow", format_currency(fcf, curr_sym), desc_fcf, c_cash)
     with c3: st.empty()
     with c4: st.empty()
+
+else:
+    # Error state is handled inside fetch_quickfs_data
+    pass
