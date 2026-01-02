@@ -28,7 +28,7 @@ def local_css(is_dark):
         shadow_color = "rgba(0, 0, 0, 0.3)"
         label_color = "#d0d0d0"
         desc_color = "#b0b0b0"
-        btn_bg = "#d93025" # Red-ish button like screenshot
+        btn_bg = "#d93025" 
         btn_text = "#ffffff"
     else:
         bg_color = "#ffffff"
@@ -83,7 +83,7 @@ def local_css(is_dark):
         .stAlert {{ border-radius: 8px; }}
         h1, h2, h3, h4, h5, h6, .stMarkdown, .stText, .stRadio label {{ color: {text_color} !important; }}
         
-        /* Custom Button Style to match screenshot */
+        /* Custom Button Style */
         div.stButton > button {{
             background-color: {btn_bg};
             color: {btn_text};
@@ -94,7 +94,7 @@ def local_css(is_dark):
             width: 100%;
         }}
         div.stButton > button:hover {{
-            background-color: #b0281f; /* Darker red on hover */
+            background-color: #b0281f; 
             color: {btn_text};
         }}
     </style>
@@ -119,14 +119,24 @@ def fetch_quickfs_data(ticker, api_key, retries=2):
 def extract_historical_df(data, start_year, end_year):
     """
     Extracts data filtered by Start Year and End Year.
+    Includes safety checks for empty date lists.
     """
     try:
         fin = data.get("data", {}).get("financials", {})
         annual = fin.get("annual", {})
         
-        # Get Fiscal Years (e.g. 2014, 2015...)
+        # Get Fiscal Years
         dates = data.get("data", {}).get("metadata", {}).get("period_end_date", [])
-        years_list = [int(d.split("-")[0]) for d in dates] # Convert to int for comparison
+        
+        # SAFETY CHECK: If no dates are returned, we cannot process history
+        if not dates:
+            return pd.DataFrame()
+
+        years_list = [int(d.split("-")[0]) for d in dates]
+        
+        # SAFETY CHECK: If years_list ended up empty
+        if not years_list:
+            return pd.DataFrame()
         
         # Metric Config
         metrics_map = {
@@ -154,15 +164,17 @@ def extract_historical_df(data, start_year, end_year):
                      if len(valid) >= 4: return sum(valid[-4:])
             return None
 
-        # 2. Determine indices for slicing based on selected years
-        # Years are usually oldest -> newest in API list? QuickFS metadata usually matches the list order.
-        # Let's map Year -> Index
+        # 2. Determine indices for slicing
         year_to_idx = {y: i for i, y in enumerate(years_list)}
         
-        # Filter valid years based on selection
-        # Handle "TTM" end_year logic separately
         include_ttm = (end_year == "TTM")
-        numeric_end = max(years_list) if include_ttm else int(end_year)
+        
+        # Logic to handle numeric end year safely
+        if include_ttm:
+            numeric_end = max(years_list) # This is safe now because of the check above
+        else:
+            numeric_end = int(end_year)
+            
         numeric_start = int(start_year)
         
         selected_years = [y for y in years_list if numeric_start <= y <= numeric_end]
@@ -172,7 +184,6 @@ def extract_historical_df(data, start_year, end_year):
         for label, keys in metrics_map.items():
             row_data = []
             
-            # Get annual data for selected years
             valid_key = next((k for k in keys if k in annual), None)
             
             if valid_key:
@@ -186,7 +197,6 @@ def extract_historical_df(data, start_year, end_year):
                         try: full_vals.append((op_hist[i] or 0) - (tax_hist[i] or 0))
                         except: full_vals.append(None)
                 
-                # Extract specific indices
                 for idx in selected_indices:
                     if idx < len(full_vals):
                         row_data.append(full_vals[idx])
@@ -195,7 +205,6 @@ def extract_historical_df(data, start_year, end_year):
             else:
                 row_data.extend([None] * len(selected_years))
             
-            # Append TTM if selected
             if include_ttm:
                 ttm_val = get_ttm(keys)
                 if label == "NOPAT" and ttm_val is None:
@@ -206,7 +215,6 @@ def extract_historical_df(data, start_year, end_year):
 
             history_data[label] = row_data
 
-        # Columns
         cols = [str(y) for y in selected_years]
         if include_ttm:
             cols.append("TTM")
@@ -215,7 +223,8 @@ def extract_historical_df(data, start_year, end_year):
         return df
 
     except Exception as e:
-        st.error(f"Error processing history: {e}")
+        # Log the error but return empty DF so app doesn't crash
+        print(f"Error in extract_historical_df: {e}")
         return pd.DataFrame()
 
 def format_currency(value, currency_symbol="$"):
@@ -249,7 +258,7 @@ with st.sidebar:
 
 local_css(st.session_state.dark_mode)
 
-# (3) Search & Filter Layout (Top of Main Page)
+# (3) Search & Filter Layout
 col_search, col_btn = st.columns([4, 1])
 with col_search:
     search_input = st.text_input("Enter Ticker", placeholder="e.g. APG:US", label_visibility="collapsed")
@@ -259,29 +268,27 @@ with col_btn:
 st.markdown("---")
 
 col_start, col_end = st.columns(2)
-# We need to default these years, but they might change based on data availability
-# For now, hardcode reasonable defaults or dynamic lists.
 current_year = datetime.now().year
 years_options = list(range(2000, current_year + 1))
 years_options_str = [str(y) for y in years_options]
 
 with col_start:
-    start_year_sel = st.selectbox("Start Year", years_options_str, index=len(years_options_str)-10 if len(years_options_str)>10 else 0)
+    # Default to 5 years ago if possible
+    default_start_idx = len(years_options_str) - 6 if len(years_options_str) > 6 else 0
+    start_year_sel = st.selectbox("Start Year", years_options_str, index=default_start_idx)
+
 with col_end:
-    # End year can be a year OR TTM
     end_options = years_options_str + ["TTM"]
     end_year_sel = st.selectbox("End Year", end_options, index=len(end_options)-1)
 
 st.markdown("---")
 
 # Logic to load data
-# We store data in session state to persist between filter changes without re-fetching API if ticker hasn't changed
 if 'data_cache' not in st.session_state:
     st.session_state.data_cache = None
 if 'current_ticker' not in st.session_state:
     st.session_state.current_ticker = ""
 
-# Trigger load
 if load_btn and search_input:
     ticker = search_input.strip()
     with st.spinner(f"Loading data for {ticker}..."):
@@ -304,8 +311,7 @@ if st.session_state.data_cache:
     st.markdown(f"## {meta.get('name', ticker)} <span style='font-size:1.2rem; color: gray'>({ticker})</span>", unsafe_allow_html=True)
     st.caption(f"Reporting Currency: {currency}")
 
-    # Process Data based on Filters
-    # Check if end year < start year (validation)
+    # Validate Dates
     valid_range = True
     if end_year_sel != "TTM" and int(end_year_sel) < int(start_year_sel):
         st.warning("⚠️ End Year cannot be before Start Year.")
@@ -314,9 +320,8 @@ if st.session_state.data_cache:
     if valid_range:
         df_display = extract_historical_df(json_data, start_year_sel, end_year_sel)
         
-        # --- VIEW 1: Cards (Displaying the LAST column of the selection - usually TTM or latest year) ---
-        # If user selects 2018-2020, cards show 2020 data. If TTM selected, cards show TTM.
         if not df_display.empty:
+            # --- VIEW 1: Cards (Displaying Latest Available Data in Selection) ---
             latest_col = df_display.columns[-1]
             st.subheader(f"📊 Snapshot ({latest_col})")
             
@@ -332,7 +337,7 @@ if st.session_state.data_cache:
             ocf = get_val("Operating Cash Flow")
             fcf = get_val("Free Cash Flow")
 
-            # Explanations
+            # Descriptions
             desc_revenue = "Top-line sales indicate market demand for the product or service and the size of the operation."
             desc_gp = "Gross profit equals revenue minus the cost of goods sold. It measures a company’s production efficiency."
             desc_op = "Operating profit equals gross profit minus operating expenses (Marketing, G&A, R&D). Core profitability."
@@ -367,20 +372,18 @@ if st.session_state.data_cache:
             with c3: st.empty()
             with c4: st.empty()
 
-            # --- VIEW 2: Raw Data (Expandable) ---
+            # --- VIEW 2: Raw Data ---
             st.markdown("---")
-            with st.expander("📂 View Raw Data (Selected Period)"):
+            with st.expander("📂 View Raw Data (Selected Period)", expanded=True):
                 st.markdown("### Historical Financials Table")
-                # Format numbers
                 df_fmt = df_display.copy()
                 for col in df_fmt.columns:
                     df_fmt[col] = df_fmt[col].apply(lambda x: format_currency(x, curr_sym) if pd.notnull(x) else "N/A")
                 st.dataframe(df_fmt, use_container_width=True)
                 
-                # Charting
                 st.markdown("### Trend Visualization")
                 metric_to_plot = st.selectbox("Select Metric", df_display.index.tolist())
-                # Plot needs numeric data
+                # Ensure data is numeric for plotting
                 st.bar_chart(df_display.loc[metric_to_plot])
         else:
             st.warning("No data available for the selected period.")
