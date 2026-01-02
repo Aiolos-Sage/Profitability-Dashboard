@@ -119,7 +119,7 @@ def fetch_quickfs_data(ticker, api_key, retries=2):
 def extract_historical_df(data, start_year, end_year):
     """
     Extracts data filtered by Start Year and End Year.
-    Includes safety checks for empty date lists.
+    Includes SAFETY CHECK for empty date lists.
     """
     try:
         fin = data.get("data", {}).get("financials", {})
@@ -170,8 +170,9 @@ def extract_historical_df(data, start_year, end_year):
         include_ttm = (end_year == "TTM")
         
         # Logic to handle numeric end year safely
+        # We use max() only because we verified years_list is NOT empty above
         if include_ttm:
-            numeric_end = max(years_list) # This is safe now because of the check above
+            numeric_end = max(years_list) 
         else:
             numeric_end = int(end_year)
             
