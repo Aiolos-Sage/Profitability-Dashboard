@@ -118,27 +118,33 @@ def fetch_quickfs_data(ticker, api_key, retries=2):
 
 def extract_historical_df(data, start_year, end_year):
     """
-    Extracts data filtered by Start Year and End Year.
-    Includes SAFETY CHECK for empty date lists.
+    Robust extraction of historical data using Pandas for alignment.
+    Prevents 'max() empty sequence' errors and handles mismatched list lengths.
     """
     try:
+        # 1. Access Nested Data Safely
         fin = data.get("data", {}).get("financials", {})
         annual = fin.get("annual", {})
+        ttm_data = fin.get("ttm", {})
+        meta = data.get("data", {}).get("metadata", {})
         
-        # Get Fiscal Years
-        dates = data.get("data", {}).get("metadata", {}).get("period_end_date", [])
-        
-        # SAFETY CHECK: If no dates are returned, we cannot process history
-        if not dates:
-            return pd.DataFrame()
+        # 2. Extract and Parse Years
+        raw_dates = meta.get("period_end_date", [])
+        if not raw_dates:
+            return pd.DataFrame() # Graceful exit if no dates
 
-        years_list = [int(d.split("-")[0]) for d in dates]
+        # Convert dates "2012-12-31" to integers [2012, 2013...]
+        years = []
+        for d in raw_dates:
+            try:
+                years.append(int(str(d).split("-")[0]))
+            except:
+                pass # Skip bad formats
         
-        # SAFETY CHECK: If years_list ended up empty
-        if not years_list:
-            return pd.DataFrame()
-        
-        # Metric Config
+        if not years:
+            return pd.DataFrame() # Graceful exit if parsing failed
+
+        # 3. Define Metrics Map
         metrics_map = {
             "Revenue": ["revenue"],
             "Gross Profit": ["gross_profit"],
@@ -151,89 +157,98 @@ def extract_historical_df(data, start_year, end_year):
             "Free Cash Flow": ["fcf"]
         }
 
-        history_data = {}
-
-        # 1. Helper for TTM
-        def get_ttm(keys):
-            for k in keys:
-                if "ttm" in fin and k in fin["ttm"]: return fin["ttm"][k]
-            q = fin.get("quarterly", {})
-            for k in keys:
-                if k in q and q[k]:
-                     valid = [x for x in q[k] if x is not None]
-                     if len(valid) >= 4: return sum(valid[-4:])
-            return None
-
-        # 2. Determine indices for slicing
-        year_to_idx = {y: i for i, y in enumerate(years_list)}
+        # 4. Construct Full DataFrame (Annual Data)
+        # We build a dictionary {Metric: [Values...]} then DataFrame it
+        df_data = {}
         
-        include_ttm = (end_year == "TTM")
-        
-        # Logic to handle numeric end year safely
-        # We use max() only because we verified years_list is NOT empty above
-        if include_ttm:
-            numeric_end = max(years_list) 
-        else:
-            numeric_end = int(end_year)
-            
-        numeric_start = int(start_year)
-        
-        selected_years = [y for y in years_list if numeric_start <= y <= numeric_end]
-        selected_indices = [year_to_idx[y] for y in selected_years]
-
-        # 3. Build rows
         for label, keys in metrics_map.items():
-            row_data = []
-            
+            # Find the first key that exists in annual data
             valid_key = next((k for k in keys if k in annual), None)
-            
+            values = []
+
             if valid_key:
-                full_vals = annual[valid_key]
-                # Special NOPAT logic
-                if label == "NOPAT" and not valid_key:
-                    op_hist = annual.get("operating_income", [])
-                    tax_hist = annual.get("income_tax", [])
-                    full_vals = []
-                    for i in range(len(op_hist)):
-                        try: full_vals.append((op_hist[i] or 0) - (tax_hist[i] or 0))
-                        except: full_vals.append(None)
-                
-                for idx in selected_indices:
-                    if idx < len(full_vals):
-                        row_data.append(full_vals[idx])
-                    else:
-                        row_data.append(None)
-            else:
-                row_data.extend([None] * len(selected_years))
+                values = annual[valid_key]
+                # Fallback for NOPAT manual calc if key exists but is empty, or pure fallback
+                if label == "NOPAT" and (not values or valid_key == "nopat_derived"):
+                    # Check if empty, try calculating
+                    if not values:
+                        op_hist = annual.get("operating_income", [])
+                        tax_hist = annual.get("income_tax", [])
+                        if op_hist and tax_hist:
+                             # Zip allows partial calc if lengths differ
+                             values = [(o or 0) - (t or 0) for o, t in zip(op_hist, tax_hist)]
             
-            if include_ttm:
-                ttm_val = get_ttm(keys)
-                if label == "NOPAT" and ttm_val is None:
-                    op = get_ttm(["operating_income"])
-                    tax = get_ttm(["income_tax"])
-                    if op is not None: ttm_val = (op - tax) if tax is not None else (op * 0.79)
-                row_data.append(ttm_val)
+            # Align list length with years length
+            # If data is shorter/longer, pandas handles index alignment better, 
+            # but here we just pad to be safe for list construction
+            if values:
+                if len(values) < len(years):
+                    values = values + [None] * (len(years) - len(values))
+                elif len(values) > len(years):
+                    values = values[:len(years)]
+            else:
+                values = [None] * len(years)
 
-            history_data[label] = row_data
+            df_data[label] = values
 
-        cols = [str(y) for y in selected_years]
-        if include_ttm:
-            cols.append("TTM")
+        # Create DataFrame indexed by Year
+        df = pd.DataFrame(df_data, index=years)
+        
+        # 5. Filter by Start/End Year
+        # Sort index to ensure range works (oldest -> newest)
+        df.sort_index(inplace=True)
+        
+        target_start = int(start_year)
+        
+        if end_year == "TTM":
+            target_end = df.index.max() if not df.empty else 2100 # Default huge if empty
+        else:
+            target_end = int(end_year)
 
-        df = pd.DataFrame(history_data, index=cols).T
-        return df
+        # Boolean Mask Filter
+        df_filtered = df[(df.index >= target_start) & (df.index <= target_end)].transpose()
+        
+        # 6. Append TTM Column if requested
+        if end_year == "TTM":
+            ttm_col = []
+            for label in df_filtered.index:
+                keys = metrics_map[label]
+                
+                # Fetch TTM
+                val = None
+                # Try explicit TTM key
+                for k in keys:
+                    if k in ttm_data:
+                        val = ttm_data[k]
+                        break
+                
+                # NOPAT TTM Calc Fallback
+                if label == "NOPAT" and val is None:
+                    op = ttm_data.get("operating_income")
+                    tax = ttm_data.get("income_tax")
+                    if op is not None:
+                        val = (op - tax) if tax is not None else (op * 0.79) # 21% tax rate assumption
+
+                ttm_col.append(val)
+            
+            # Add as new column
+            df_filtered["TTM"] = ttm_col
+
+        return df_filtered
 
     except Exception as e:
-        # Log the error but return empty DF so app doesn't crash
-        print(f"Error in extract_historical_df: {e}")
+        # In production, you might want to log 'e'
         return pd.DataFrame()
 
 def format_currency(value, currency_symbol="$"):
     if value is None: return "N/A"
-    abs_val = abs(value)
-    if abs_val >= 1_000_000_000: return f"{currency_symbol}{value / 1_000_000_000:.2f}B"
-    elif abs_val >= 1_000_000: return f"{currency_symbol}{value / 1_000_000:.2f}M"
-    else: return f"{currency_symbol}{value:,.2f}"
+    try:
+        abs_val = abs(value)
+        if abs_val >= 1_000_000_000: return f"{currency_symbol}{value / 1_000_000_000:.2f}B"
+        elif abs_val >= 1_000_000: return f"{currency_symbol}{value / 1_000_000:.2f}M"
+        else: return f"{currency_symbol}{value:,.2f}"
+    except:
+        return "N/A"
 
 def render_card(label, value_str, description, accent_color="#4285F4"):
     html = f"""
@@ -387,7 +402,8 @@ if st.session_state.data_cache:
                 # Ensure data is numeric for plotting
                 st.bar_chart(df_display.loc[metric_to_plot])
         else:
-            st.warning("No data available for the selected period.")
+            # Fallback for empty DF: Show the "Start Year" might be too recent
+            st.warning(f"No data found between {start_year_sel} and {end_year_sel}. Try selecting an earlier Start Year.")
 
 elif load_btn and not search_input:
     st.warning("Please enter a ticker symbol.")
