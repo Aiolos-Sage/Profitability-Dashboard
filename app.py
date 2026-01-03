@@ -75,8 +75,6 @@ def local_css(is_dark):
             border-top: 1px solid {border_color};
             padding-top: 12px;
         }}
-        
-        /* Button & Inputs */
         div.stButton > button {{
             background-color: {btn_bg};
             color: {btn_text};
@@ -107,22 +105,20 @@ def fetch_quickfs_data(ticker, api_key, retries=2):
 
 def extract_historical_df(data, start_year, end_year):
     """
-    Robust data extraction using dictionary mapping to prevent index errors.
+    Robust data extraction using Right-Alignment to handle mismatched list lengths.
     """
     try:
-        # 1. Safe Access to API sections
+        # 1. Safe Access
         d = data.get("data", {})
         fin = d.get("financials", {})
         annual = fin.get("annual", {})
         ttm_data = fin.get("ttm", {})
         meta = d.get("metadata", {})
         
-        # 2. Parse Dates (The "Index")
+        # 2. Parse Years from Metadata
         raw_dates = meta.get("period_end_date", [])
         if not raw_dates: return pd.DataFrame()
         
-        # Create a list of years. QuickFS sends oldest -> newest.
-        # Example: [2014, 2015, ... 2023]
         years = []
         for dt in raw_dates:
             try: years.append(int(str(dt).split("-")[0]))
@@ -131,7 +127,6 @@ def extract_historical_df(data, start_year, end_year):
         if not years: return pd.DataFrame()
 
         # 3. Define Metric Map
-        # Note: We include 'income_tax' solely for NOPAT calculation
         map_keys = {
             "Revenue": ["revenue"],
             "Gross Profit": ["gross_profit"],
@@ -141,23 +136,37 @@ def extract_historical_df(data, start_year, end_year):
             "EPS (Diluted)": ["eps_diluted"],
             "Operating Cash Flow": ["cf_cfo", "cfo"],
             "Free Cash Flow": ["fcf"],
-            "Income Tax": ["income_tax"] # Hidden helper
+            "Income Tax": ["income_tax"]
         }
 
-        # 4. Build DataFrame Dictionary (Year -> Value)
-        # We zip the 'years' list with the 'data' list. This aligns them perfectly.
+        # 4. Build DataFrame Dictionary (Right-Aligned)
+        # Only map the LAST N items of data to the LAST N items of years
         df_dict = {}
         
         for label, keys in map_keys.items():
-            # Find valid key in annual data
             valid_key = next((k for k in keys if k in annual), None)
             
-            # Create a dictionary for this metric: {2014: 100, 2015: 110...}
             metric_series = {}
             if valid_key and annual[valid_key]:
                 data_list = annual[valid_key]
-                # Zip strictly ensures we only pair available years with available data
-                for y, val in zip(years, data_list):
+                
+                # Check lengths
+                len_data = len(data_list)
+                len_years = len(years)
+                
+                # Align from the END (Newest data matches Newest year)
+                # Example: Years=[2000...2023] (24), Data=[100...500] (5)
+                # We slice Years to the last 5: Years[-5:] -> [2019...2023]
+                if len_data <= len_years:
+                    aligned_years = years[-len_data:]
+                    aligned_data = data_list
+                else:
+                    # Rare case: More data than dates? Align from end still.
+                    aligned_years = years
+                    aligned_data = data_list[-len_years:]
+                
+                # Create Dictionary
+                for y, val in zip(aligned_years, aligned_data):
                     if y is not None:
                         metric_series[y] = val
             
@@ -166,71 +175,49 @@ def extract_historical_df(data, start_year, end_year):
         # 5. Convert to Pandas DataFrame
         df = pd.DataFrame(df_dict)
         
-        # Calculate NOPAT safely using Pandas Vectorization
-        # NOPAT = Operating Profit - Income Tax
+        # NOPAT Calc
         if "Operating Profit" in df.columns:
             if "Income Tax" in df.columns:
                 df["NOPAT"] = df["Operating Profit"] - df["Income Tax"]
             else:
-                # Fallback: 21% Tax assumption
                 df["NOPAT"] = df["Operating Profit"] * (1 - 0.21)
         
-        # Drop the helper 'Income Tax' column if you don't want to display it
-        if "Income Tax" in df.columns:
-            df = df.drop(columns=["Income Tax"])
+        if "Income Tax" in df.columns: df = df.drop(columns=["Income Tax"])
 
         # 6. Filter by User Selection
-        # Ensure index is numeric and sorted
         df.index = df.index.astype(int)
         df.sort_index(inplace=True)
         
         target_start = int(start_year)
-        if end_year == "TTM":
-            target_end = 2100 # Future-proof max
-        else:
-            target_end = int(end_year)
+        target_end = 2100 if end_year == "TTM" else int(end_year)
             
-        # Filter Rows
         df = df[(df.index >= target_start) & (df.index <= target_end)]
         
-        # 7. Handle TTM Column
+        # 7. Add TTM Column if requested
         if end_year == "TTM":
-            # We add a new row or column. For display, we want TTM as the *last column* in a transposed view.
-            # Let's prepare a TTM Series
             ttm_vals = {}
             for label in df.columns:
-                # Find TTM value from API 'ttm' dictionary
-                # We need to map 'label' back to API keys. This is a bit tricky.
-                # Easier way: Re-check the map_keys
                 found = None
-                
-                # Special NOPAT Logic for TTM
                 if label == "NOPAT":
                      op = ttm_data.get("operating_income")
                      tax = ttm_data.get("income_tax")
                      if op is not None:
                          found = (op - tax) if tax is not None else (op * 0.79)
                 else:
-                    # Standard Lookup
-                    # Find which API keys correspond to this Label
                     candidates = map_keys.get(label, [])
                     for k in candidates:
                         if k in ttm_data:
                             found = ttm_data[k]
                             break
-                            
                 ttm_vals[label] = found
             
-            # Add TTM as a new row with index 9999 (temp)
+            # Insert TTM row
             df.loc[9999] = ttm_vals
-            # Rename index 9999 to 'TTM'
             df.rename(index={9999: "TTM"}, inplace=True)
 
-        # Transpose: Metrics become Rows, Years become Columns
         return df.T
 
-    except Exception as e:
-        # st.error(f"Debug Error: {e}") # Uncomment for debugging
+    except Exception:
         return pd.DataFrame()
 
 def format_currency(value, currency_symbol="$"):
@@ -257,7 +244,7 @@ def render_card(label, value_str, description, accent_color="#4285F4"):
 # --- Main App ---
 st.set_page_config(page_title="Financial Dashboard", layout="wide")
 
-# (1) Clean Sidebar
+# Sidebar
 with st.sidebar:
     st.header("Settings")
     st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, on_change=toggle_dark_mode)
@@ -266,7 +253,7 @@ with st.sidebar:
 
 local_css(st.session_state.dark_mode)
 
-# (2) Top Search Bar
+# Search
 col_search, col_btn = st.columns([4, 1])
 with col_search:
     search_input = st.text_input("Enter Ticker", placeholder="e.g. APG:US", label_visibility="collapsed")
@@ -275,14 +262,13 @@ with col_btn:
 
 st.markdown("---")
 
-# (3) Filters
+# Filters
 col_start, col_end = st.columns(2)
 current_year = datetime.now().year
 years_range = list(range(2000, current_year + 1))
 years_str = [str(y) for y in years_range]
 
 with col_start:
-    # Default to 2017 or similar
     def_idx = years_str.index("2017") if "2017" in years_str else 0
     start_year_sel = st.selectbox("Start Year", years_str, index=def_idx)
 
@@ -292,7 +278,7 @@ with col_end:
 
 st.markdown("---")
 
-# Logic: Persist Data
+# Logic
 if 'data_cache' not in st.session_state: st.session_state.data_cache = None
 if 'current_ticker' not in st.session_state: st.session_state.current_ticker = ""
 
@@ -306,7 +292,7 @@ if load_btn and search_input:
         else:
             st.session_state.data_cache = None
 
-# Render Data
+# Render
 if st.session_state.data_cache:
     json_data = st.session_state.data_cache
     ticker = st.session_state.current_ticker
@@ -317,26 +303,17 @@ if st.session_state.data_cache:
     st.markdown(f"## {meta.get('name', ticker)} <span style='color:gray'>({ticker})</span>", unsafe_allow_html=True)
     st.caption(f"Reporting Currency: {currency}")
 
-    # Validate Inputs
-    valid = True
     if end_year_sel != "TTM" and int(end_year_sel) < int(start_year_sel):
         st.error("End Year must be after Start Year.")
-        valid = False
-
-    if valid:
-        # Extract Data
+    else:
         df = extract_historical_df(json_data, start_year_sel, end_year_sel)
         
         if not df.empty:
-            # 1. Cards View (Snapshot of the LAST column - TTM or End Year)
-            latest_col = df.columns[-1] # "TTM" or "2023"
-            
+            latest_col = df.columns[-1]
             st.subheader(f"📊 Snapshot ({latest_col})")
             
-            # Helper to get value
             def val(metric): return df.loc[metric, latest_col] if metric in df.index else None
 
-            # Cards Logic
             c_inc = "#3b82f6"
             c1, c2, c3, c4 = st.columns(4)
             with c1: render_card("Revenue", format_currency(val("Revenue"), curr_sym), "Top-line sales indicating market demand.", c_inc)
@@ -360,26 +337,19 @@ if st.session_state.data_cache:
             with c3: st.empty()
             with c4: st.empty()
             
-            # 2. Raw Data View
             st.markdown("---")
             with st.expander("📂 View Raw Data (Selected Period)", expanded=True):
-                # Format DF for display
                 df_disp = df.copy()
                 for c in df_disp.columns:
                     df_disp[c] = df_disp[c].apply(lambda x: format_currency(x, curr_sym) if pd.notnull(x) else "N/A")
                 st.dataframe(df_disp, use_container_width=True)
 
                 st.markdown("### Trend Visualization")
-                # Plot requires numeric data (df), not string formatted (df_disp)
-                # Also, index is Metrics, Columns are Years. We need to Transpose for st.bar_chart
                 metric_plot = st.selectbox("Select Metric", df.index)
                 if metric_plot:
                     row_data = df.loc[metric_plot]
-                    # If TTM is in index (it's a string mixed with ints), chart might look odd. 
-                    # Convert index to string for uniform x-axis
                     row_data.index = row_data.index.astype(str)
                     st.bar_chart(row_data)
-
         else:
             st.warning("No data found for the selected period. Try an earlier Start Year.")
 
