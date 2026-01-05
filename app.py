@@ -306,7 +306,7 @@ with st.sidebar:
                     st.session_state.data_loaded = True
 
 # --- MAIN APP ---
-st.title("📘 Profitability Terms Guide")
+st.title("📘 Profitability Dashboard")
 
 if st.session_state.data_loaded and st.session_state.processed_df is not None:
     df = st.session_state.processed_df
