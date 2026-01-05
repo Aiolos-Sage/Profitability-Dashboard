@@ -5,7 +5,7 @@ import numpy as np
 import altair as alt
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Profitability Terms Guide", page_icon="📘", layout="wide")
+st.set_page_config(page_title="Profitability Dashboard", page_icon="📘", layout="wide")
 
 # --- CONFIGURATION ---
 try:
@@ -16,13 +16,13 @@ except (FileNotFoundError, KeyError):
 
 # --- DEFINITIONS ---
 SHORT_DESCRIPTIONS = {
-    "Revenue": "Top-line sales indicate market demand for the product or service and the size of the operation.",
+    "Revenue": "Indicate market demand for the product or service and the size of the operation.",
     "Gross Profit": "Revenue minus Cost of Goods Sold (COGS). Measures production efficiency.",
     "Operating Profit": "Gross Profit minus operating expenses (marketing, R&D, G&A). Core business profitability.",
-    "EBITDA": "Proxy for operational cash flow before financing effects (Interest, Taxes, Depreciation, Amortization).",
-    "NOPAT": "Net Operating Profit After Tax. Shows potential cash yield if the company had no debt.",
+    "EBITDA": "Proxy for operating cash flow before financing effects (Interest, Taxes, Depreciation, Amortization).",
+    "NOPAT": "Operating Profit After Tax. Shows potential cash yield if the company had no debt.",
     "Net Income": "The bottom line. Profit left for shareholders after all expenses, interest, and taxes.",
-    "EPS": "Net Income divided by shares outstanding. Shows how much profit is allocated to each share.",
+    "EPS": "Net Income divided by shares outstanding. Shows how much profit is left to each share.",
     "Operating Cash Flow": "Cash generated from actual day-to-day business operations. Adjusts Net Income for non-cash items.",
     "Free Cash Flow": "Operating Cash Flow minus CapEx. The truly 'free' cash available for dividends or reinvestment."
 }
