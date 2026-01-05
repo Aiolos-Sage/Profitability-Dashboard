@@ -13,6 +13,19 @@ except (FileNotFoundError, KeyError):
     st.error("🚨 API Key missing! Please add `QUICKFS_API_KEY` to your `.streamlit/secrets.toml` file.")
     st.stop()
 
+# --- DEFINITIONS (FROM YOUR GUIDE-APP.PY) ---
+METRIC_DEFINITIONS = {
+    "Revenue": "Top-line sales indicate market demand for the product or service and the size of the operation.",
+    "Gross Profit": "Gross profit equals revenue minus the cost of goods sold. It measures a company’s production efficiency—if it’s negative, the company loses money on each product before covering overhead expenses like rent or salaries. COGS (cost of goods sold) includes raw materials, manufacturing costs, and depreciation on production assets such as machinery, factory buildings, production robots, tools and vehicles used in the manufacturing process.",
+    "Operating Profit": "Operating profit equals gross profit minus operating expenses such as marketing, G&A, R&D, and depreciation. G&A (General and Administrative) covers indirect business costs like office rent, utilities, administrative salaries, and insurance, while R&D (Research and Development) covers costs to create or improve products, such as engineers’ salaries, lab work, and testing. It is a key measure of how profitable the core business is, without the effects of taxes and financing decisions.",
+    "EBITDA": "EBITDA stands for Earnings Before Interest, Taxes, Depreciation, and Amortization. It is calculated as operating profit plus depreciation and amortization, and is often used as a proxy for cash flow because non-cash charges like depreciation do not represent actual cash outflows. This makes EBITDA a popular metric for valuing companies, especially in tech and infrastructure sectors, as it focuses on operational cash generation before financing and tax effects.",
+    "NOPAT": "NOPAT shows the capital allocation efficiency, or how much profit a business makes from its operations after an estimate of taxes, but without including the effects of debt or interest. It is calculated using the formula: NOPAT = EBIT × (1 − Tax Rate). It allows investors to compare companies with different levels of debt (leverage) on an apples-to-apples basis. This “clean” operating profit is commonly used in return metrics like ROIC to assess how efficiently a company uses its capital to generate profits.",
+    "Net Income": "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.",
+    "EPS": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
+    "Operating Cash Flow": "Operating cash flow is the cash from operations that actually comes into or leaves the company from its day-to-day business activities. It adjusts net income for non-cash items and changes in working capital, so sales made on credit (like unpaid invoices in accounts receivable) increase net income but do not increase operating cash flow until the cash is collected.",
+    "Free Cash Flow": "Free cash flow (FCF) is the cash left over after a company pays for its operating costs and necessary investments in equipment and machinery (CapEx). It represents the truly free money that can be used to pay dividends, buy back shares, or reinvest in growth without hurting the existing business, and because it’s calculated after interest in most cases, it shows how much cash is left for shareholders after servicing debt."
+}
+
 # --- SESSION STATE ---
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
@@ -49,18 +62,22 @@ def apply_css(is_dark):
             background-color: {card_bg};
             border: 1px solid {border_color};
             border-radius: 12px;
-            padding: 20px;
+            padding: 20px 20px 10px 20px; /* Reduced bottom padding */
             box-shadow: 0 4px 6px {shadow_color};
-            height: 100%; /* Ensure full height */
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }}
         
         h4.metric-label {{ font-size: 0.85rem; font-weight: 600; color: {label_color}; text-transform: uppercase; margin: 0 0 5px 0; letter-spacing: 0.05em; }}
-        div.metric-value {{ font-size: 1.8rem; font-weight: 700; color: {text_color}; margin-bottom: 10px; }}
-        p.metric-desc {{ font-size: 0.9rem; line-height: 1.4; color: {desc_color}; margin: 0; border-top: 1px solid {border_color}; padding-top: 10px; }}
+        div.metric-value {{ font-size: 1.8rem; font-weight: 700; color: {text_color}; margin-bottom: 5px; }}
+        
+        /* Styling the expander to look cleaner */
+        .streamlit-expanderHeader {{
+            font-size: 0.85rem !important;
+            color: {desc_color} !important;
+        }}
         
         /* Input Styling Override */
         input[type="text"] {{ background-color: {card_bg} !important; color: {text_color} !important; border: 1px solid {border_color} !important; }}
@@ -132,13 +149,13 @@ def process_historical_data(raw_data):
             "FCF Reported": align(fcf, length)
         }, index=[str(d).split('-')[0] for d in dates])
 
-        # Calculate Derived Metrics (NOPAT & FCF Fallback)
+        # Calculate Derived Metrics
         # NOPAT
         df['NOPAT'] = np.where(df['Operating Profit'].notna() & df['Income Tax'].notna(), 
                                df['Operating Profit'] - df['Income Tax'],
                                df['Operating Profit'] * (1 - 0.21)) 
         
-        # FCF (Preferred: Reported, Fallback: CFO - CapEx)
+        # FCF
         df['Free Cash Flow'] = np.where(df['FCF Reported'].notna() & (df['FCF Reported'] != 0), 
                              df['FCF Reported'], 
                              df['Operating Cash Flow'] - df['CapEx'].abs())
@@ -187,34 +204,44 @@ def process_historical_data(raw_data):
         df_ttm = pd.DataFrame([ttm_row], index=["TTM"])
         df_final = pd.concat([df, df_ttm])
         
-        # Clean columns for display/charting
         cols_to_keep = ["Revenue", "Gross Profit", "Operating Profit", "EBITDA", "NOPAT", "Net Income", "EPS", "Operating Cash Flow", "Free Cash Flow"]
         return df_final[cols_to_keep], None
 
     except Exception as e:
         return None, f"Processing Error: {str(e)}"
 
-def render_metric_block(col, label, current_val, desc, series_data, color_code):
-    """Renders the Card AND the Chart inside the provided column"""
+def render_metric_block(col, label_key, current_val, series_data, color_code):
+    """
+    Renders the Card, the Expander for details, and the Chart.
+    """
+    # Get the full description from the dictionary
+    full_desc = METRIC_DEFINITIONS.get(label_key, "Description not available.")
+    
+    # Extract just the first sentence for a "preview" (optional, currently using full text in expander)
+    # first_sentence = full_desc.split('.')[0] + "."
+    
     with col:
-        # 1. Render Card
+        # 1. Render Card (Title + Value)
         st.markdown(f"""
         <div class="metric-card" style="border-top: 4px solid {color_code};">
             <div>
-                <h4 class="metric-label">{label}</h4>
+                <h4 class="metric-label">{label_key}</h4>
                 <div class="metric-value">{current_val}</div>
             </div>
-            <p class="metric-desc">{desc}</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # 2. Render Chart (Mini Trend)
-        # We need a clean series for charting (drop NaNs)
+        # 2. Expandable Description (+ Icon)
+        # Using Streamlit's native expander to act as the "+" toggle
+        with st.expander("➕ Read details"):
+            st.markdown(f"<div style='font-size: 0.9rem; line-height: 1.4; color: #888;'>{full_desc}</div>", unsafe_allow_html=True)
+        
+        # 3. Render Chart
         clean_series = series_data.dropna()
         if not clean_series.empty:
             st.line_chart(clean_series, height=150, use_container_width=True, color=color_code)
         else:
-            st.caption("No historical data for chart.")
+            st.caption("No historical data.")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -248,10 +275,7 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     
     st.markdown(f"## {meta.get('name', 'Unknown Company')} ({meta.get('symbol', ticker_input)})")
     
-    # --- Timeframe Selector ---
     all_periods = list(df.index)
-    
-    # Defaults: Start 10 years ago (or as far back as possible), End at TTM
     default_end = len(all_periods) - 1
     default_start = max(0, default_end - 10)
     
@@ -261,7 +285,6 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     with c_sel1:
         start_period = st.selectbox("Start Date", all_periods, index=default_start)
     with c_sel2:
-        # Filter End options to be >= Start
         try:
             s_idx = all_periods.index(start_period)
             end_options = all_periods[s_idx:]
@@ -272,17 +295,14 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     with c_info:
         st.info(f"Showing values for **{end_period}**. Charts show trend from **{start_period}** to **{end_period}**.")
 
-    # --- DATA SLICING ---
-    # Create the subset for charts
+    # Data Slicing
     try:
         s_idx = all_periods.index(start_period)
         e_idx = all_periods.index(end_period)
-        # Note: iloc upper bound is exclusive, so +1
         df_slice = df.iloc[s_idx : e_idx + 1]
     except:
         df_slice = df
         
-    # Get current values (scalar)
     row = df.loc[end_period]
     currency = meta.get("currency", "USD")
     curr_sym = "$" if currency == "USD" else (currency + " ")
@@ -295,38 +315,31 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     
     # Row 1
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "1. Revenue (Sales)", format_currency(row['Revenue'], curr_sym), 
-                        "Top-line sales indicate market demand and operation size.", 
+    render_metric_block(c1, "Revenue", format_currency(row['Revenue'], curr_sym), 
                         df_slice['Revenue'], c_income)
                         
-    render_metric_block(c2, "2. Gross Profit", format_currency(row['Gross Profit'], curr_sym), 
-                        "Revenue minus COGS. Measures production efficiency.", 
+    render_metric_block(c2, "Gross Profit", format_currency(row['Gross Profit'], curr_sym), 
                         df_slice['Gross Profit'], c_income)
                         
-    render_metric_block(c3, "3. Operating Profit (EBIT)", format_currency(row['Operating Profit'], curr_sym), 
-                        "Gross Profit minus OpEx. Core profitability before tax/interest.", 
+    render_metric_block(c3, "Operating Profit", format_currency(row['Operating Profit'], curr_sym), 
                         df_slice['Operating Profit'], c_income)
                         
-    render_metric_block(c4, "4. EBITDA", format_currency(row['EBITDA'], curr_sym), 
-                        "Proxy for operational cash flow before financing effects.", 
+    render_metric_block(c4, "EBITDA", format_currency(row['EBITDA'], curr_sym), 
                         df_slice['EBITDA'], c_income)
 
     st.markdown("---")
     
     # Row 2
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "5. NOPAT", format_currency(row['NOPAT'], curr_sym), 
-                        "Net Operating Profit After Tax. Potential yield if no debt.", 
+    render_metric_block(c1, "NOPAT", format_currency(row['NOPAT'], curr_sym), 
                         df_slice['NOPAT'], c_income)
                         
-    render_metric_block(c2, "6. Net Income", format_currency(row['Net Income'], curr_sym), 
-                        "Bottom line. Profit after all expenses, interest, and taxes.", 
+    render_metric_block(c2, "Net Income", format_currency(row['Net Income'], curr_sym), 
                         df_slice['Net Income'], c_income)
                         
     eps_val = row['EPS']
     eps_str = f"{curr_sym}{eps_val:.2f}" if pd.notna(eps_val) else "N/A"
-    render_metric_block(c3, "7. EPS (Diluted)", eps_str, 
-                        "Net Income divided by shares outstanding.", 
+    render_metric_block(c3, "EPS", eps_str, 
                         df_slice['EPS'], c_income)
                         
     with c4: st.empty()
@@ -338,12 +351,10 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "8. Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
-                        "Cash from day-to-day operations. Adjusts for non-cash items.", 
+    render_metric_block(c1, "Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
                         df_slice['Operating Cash Flow'], c_cash)
                         
-    render_metric_block(c2, "9. Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
-                        "OCF minus CapEx. Truly 'free' cash for dividends/reinvestment.", 
+    render_metric_block(c2, "Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
                         df_slice['Free Cash Flow'], c_cash)
     
     with c3: st.empty()
@@ -351,10 +362,10 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
 
     # --- VIEW DATA SECTION ---
     st.write("")
-    st.write("") # Extra vertical space
+    st.write("")
     with st.expander(f"View Data Table ({start_period} - {end_period})"):
         st.write("")
-        st.write("") # Line breaks inside expander for UI/UX
+        st.write("")
         st.dataframe(df_slice.style.format("{:,.0f}", na_rep="N/A"))
 
 else:
@@ -366,5 +377,5 @@ else:
     
     1. **Search** for any global ticker (e.g., `AAPL:US`, `DNP:PL`).
     2. **Select a Date Range** to see how metrics have evolved.
-    3. **Visualize Trends** with dynamic charts for every metric.
+    3. **Expand the Cards (➕)** to read full definitions.
     """)
