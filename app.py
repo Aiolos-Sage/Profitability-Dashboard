@@ -237,7 +237,7 @@ def render_metric_block(col, label_key, current_val, series_data, color_code):
         </div>
         """, unsafe_allow_html=True)
         
-        # 2. Expander (Read Details) - ADDED <br> here
+        # 2. Expander (Read Details)
         with st.expander("Read Details"):
             st.markdown(f"<div style='font-size: 0.9rem; line-height: 1.4; color: #888;'>{full_desc}</div><br>", unsafe_allow_html=True)
         
@@ -319,6 +319,9 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     default_start = max(0, default_end - 10)
     
     st.divider()
+    
+    # --- UI ALIGNMENT FIX ---
+    # Adjusted columns to be cleaner, using [1, 1, 2] ratio
     c_sel1, c_sel2, c_info = st.columns([1, 1, 2])
     
     with c_sel1:
@@ -332,7 +335,9 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
         end_period = st.selectbox("End Date", end_options, index=len(end_options)-1)
     
     with c_info:
-        st.info(f"Showing values for **{end_period}**. Charts show trend from **{start_period}** to **{end_period}**.")
+        # Added spacer to push the info box down to align with input fields
+        st.markdown('<div style="height: 28px;"></div>', unsafe_allow_html=True)
+        st.info(f"All the charts are showing values from **{start_period}** to **{end_period}**.")
 
     # Data Slicing
     try:
