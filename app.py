@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
+import altair as alt
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Profitability Terms Guide", page_icon="📘", layout="wide")
@@ -13,8 +14,22 @@ except (FileNotFoundError, KeyError):
     st.error("🚨 API Key missing! Please add `QUICKFS_API_KEY` to your `.streamlit/secrets.toml` file.")
     st.stop()
 
-# --- DEFINITIONS (FROM YOUR GUIDE-APP.PY) ---
-METRIC_DEFINITIONS = {
+# --- DEFINITIONS ---
+# Short summaries for the card face
+SHORT_DESCRIPTIONS = {
+    "Revenue": "Top-line sales indicate market demand for the product or service and the size of the operation.",
+    "Gross Profit": "Revenue minus Cost of Goods Sold (COGS). Measures production efficiency.",
+    "Operating Profit": "Gross Profit minus operating expenses (marketing, R&D, G&A). Core business profitability.",
+    "EBITDA": "Proxy for operational cash flow before financing effects (Interest, Taxes, Depreciation, Amortization).",
+    "NOPAT": "Net Operating Profit After Tax. Shows potential cash yield if the company had no debt.",
+    "Net Income": "The bottom line. Profit left for shareholders after all expenses, interest, and taxes.",
+    "EPS": "Net Income divided by shares outstanding. Shows how much profit is allocated to each share.",
+    "Operating Cash Flow": "Cash generated from actual day-to-day business operations. Adjusts Net Income for non-cash items.",
+    "Free Cash Flow": "Operating Cash Flow minus CapEx. The truly 'free' cash available for dividends or reinvestment."
+}
+
+# Full detailed definitions for the expander
+FULL_DEFINITIONS = {
     "Revenue": "Top-line sales indicate market demand for the product or service and the size of the operation.",
     "Gross Profit": "Gross profit equals revenue minus the cost of goods sold. It measures a company’s production efficiency—if it’s negative, the company loses money on each product before covering overhead expenses like rent or salaries. COGS (cost of goods sold) includes raw materials, manufacturing costs, and depreciation on production assets such as machinery, factory buildings, production robots, tools and vehicles used in the manufacturing process.",
     "Operating Profit": "Operating profit equals gross profit minus operating expenses such as marketing, G&A, R&D, and depreciation. G&A (General and Administrative) covers indirect business costs like office rent, utilities, administrative salaries, and insurance, while R&D (Research and Development) covers costs to create or improve products, such as engineers’ salaries, lab work, and testing. It is a key measure of how profitable the core business is, without the effects of taxes and financing decisions.",
@@ -62,7 +77,7 @@ def apply_css(is_dark):
             background-color: {card_bg};
             border: 1px solid {border_color};
             border-radius: 12px;
-            padding: 20px 20px 10px 20px; /* Reduced bottom padding */
+            padding: 20px 20px 10px 20px;
             box-shadow: 0 4px 6px {shadow_color};
             display: flex;
             flex-direction: column;
@@ -72,11 +87,13 @@ def apply_css(is_dark):
         
         h4.metric-label {{ font-size: 0.85rem; font-weight: 600; color: {label_color}; text-transform: uppercase; margin: 0 0 5px 0; letter-spacing: 0.05em; }}
         div.metric-value {{ font-size: 1.8rem; font-weight: 700; color: {text_color}; margin-bottom: 5px; }}
-        
-        /* Styling the expander to look cleaner */
+        p.metric-preview {{ font-size: 0.9rem; color: {desc_color}; margin-bottom: 8px; line-height: 1.4; }}
+
+        /* Expander Styling */
         .streamlit-expanderHeader {{
             font-size: 0.85rem !important;
             color: {desc_color} !important;
+            padding-left: 0 !important;
         }}
         
         /* Input Styling Override */
@@ -132,7 +149,6 @@ def process_historical_data(raw_data):
 
         if not dates: return None, "No historical dates found."
 
-        # 2. Align Lists
         length = len(dates)
         def align(arr, l): return (arr + [None]*(l-len(arr)))[:l] if len(arr) < l else arr[:l]
 
@@ -149,18 +165,16 @@ def process_historical_data(raw_data):
             "FCF Reported": align(fcf, length)
         }, index=[str(d).split('-')[0] for d in dates])
 
-        # Calculate Derived Metrics
-        # NOPAT
+        # Derived Metrics
         df['NOPAT'] = np.where(df['Operating Profit'].notna() & df['Income Tax'].notna(), 
                                df['Operating Profit'] - df['Income Tax'],
                                df['Operating Profit'] * (1 - 0.21)) 
         
-        # FCF
         df['Free Cash Flow'] = np.where(df['FCF Reported'].notna() & (df['FCF Reported'] != 0), 
                              df['FCF Reported'], 
                              df['Operating Cash Flow'] - df['CapEx'].abs())
 
-        # 3. Handle TTM
+        # 2. Handle TTM
         q_rev = safe_get_list(quarterly, ["revenue"])
         q_gp = safe_get_list(quarterly, ["gross_profit"])
         q_op = safe_get_list(quarterly, ["operating_income"])
@@ -185,7 +199,6 @@ def process_historical_data(raw_data):
             "CapEx": get_ttm_sum(q_capex),
         }
         
-        # TTM Derived
         op_ttm = ttm_row.get("Operating Profit")
         tax_ttm = ttm_row.get("Income Tax")
         
@@ -212,34 +225,53 @@ def process_historical_data(raw_data):
 
 def render_metric_block(col, label_key, current_val, series_data, color_code):
     """
-    Renders the Card, the Expander for details, and the Chart.
+    Renders Card -> Preview Text -> Read Details -> Currency Chart
     """
-    # Get the full description from the dictionary
-    full_desc = METRIC_DEFINITIONS.get(label_key, "Description not available.")
-    
-    # Extract just the first sentence for a "preview" (optional, currently using full text in expander)
-    # first_sentence = full_desc.split('.')[0] + "."
+    short_desc = SHORT_DESCRIPTIONS.get(label_key, "")
+    full_desc = FULL_DEFINITIONS.get(label_key, "Description not available.")
     
     with col:
-        # 1. Render Card (Title + Value)
+        # 1. Card Header & Value
         st.markdown(f"""
         <div class="metric-card" style="border-top: 4px solid {color_code};">
             <div>
                 <h4 class="metric-label">{label_key}</h4>
                 <div class="metric-value">{current_val}</div>
             </div>
+            <p class="metric-preview">{short_desc}</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # 2. Expandable Description (+ Icon)
-        # Using Streamlit's native expander to act as the "+" toggle
-        with st.expander("➕ Read details"):
+        # 2. Expander (Read Details)
+        with st.expander("Read Details"):
             st.markdown(f"<div style='font-size: 0.9rem; line-height: 1.4; color: #888;'>{full_desc}</div>", unsafe_allow_html=True)
         
-        # 3. Render Chart
+        # 3. Altair Chart with Currency Formatting
         clean_series = series_data.dropna()
         if not clean_series.empty:
-            st.line_chart(clean_series, height=150, use_container_width=True, color=color_code)
+            # Prepare data for Altair (Reset index to get 'Year' as a column)
+            chart_data = clean_series.reset_index()
+            chart_data.columns = ['Year', 'Value']
+            
+            # Use 'f' format for EPS (small number), 's' (SI prefix) for large numbers
+            y_format = "$.2f" if label_key == "EPS" else "$.2s"
+
+            chart = alt.Chart(chart_data).mark_line(color=color_code).encode(
+                x=alt.X('Year', axis=alt.Axis(labels=False, title=None, tickSize=0)), # Hide X axis labels for cleaner look in small card
+                y=alt.Y('Value', axis=alt.Axis(format=y_format, title=None)),
+                tooltip=[
+                    alt.Tooltip('Year', title='Period'),
+                    alt.Tooltip('Value', format=y_format, title=label_key)
+                ]
+            ).properties(
+                height=150
+            ).configure_axis(
+                grid=False
+            ).configure_view(
+                strokeWidth=0
+            )
+            
+            st.altair_chart(chart, use_container_width=True)
         else:
             st.caption("No historical data.")
 
@@ -377,5 +409,5 @@ else:
     
     1. **Search** for any global ticker (e.g., `AAPL:US`, `DNP:PL`).
     2. **Select a Date Range** to see how metrics have evolved.
-    3. **Expand the Cards (➕)** to read full definitions.
+    3. **Visualize Trends** with dynamic charts for every metric.
     """)
