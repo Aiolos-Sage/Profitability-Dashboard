@@ -362,28 +362,28 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     render_metric_block(c1, "1. Revenue", format_currency(row['Revenue'], curr_sym), 
                         df_slice['Revenue'], c_income)
                         
-    render_metric_block(c2, "Gross Profit", format_currency(row['Gross Profit'], curr_sym), 
+    render_metric_block(c2, "2. Gross Profit", format_currency(row['Gross Profit'], curr_sym), 
                         df_slice['Gross Profit'], c_income)
                         
-    render_metric_block(c3, "Operating Profit", format_currency(row['Operating Profit'], curr_sym), 
+    render_metric_block(c3, "3. Operating Profit (EBIT)", format_currency(row['Operating Profit'], curr_sym), 
                         df_slice['Operating Profit'], c_income)
                         
-    render_metric_block(c4, "EBITDA", format_currency(row['EBITDA'], curr_sym), 
+    render_metric_block(c4, "4. EBITDA", format_currency(row['EBITDA'], curr_sym), 
                         df_slice['EBITDA'], c_income)
 
     st.markdown("---")
     
     # Row 2
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "NOPAT", format_currency(row['NOPAT'], curr_sym), 
+    render_metric_block(c1, "5. NOPAT", format_currency(row['NOPAT'], curr_sym), 
                         df_slice['NOPAT'], c_income)
                         
-    render_metric_block(c2, "Net Income", format_currency(row['Net Income'], curr_sym), 
+    render_metric_block(c2, "6. Net Income", format_currency(row['Net Income'], curr_sym), 
                         df_slice['Net Income'], c_income)
                         
     eps_val = row['EPS']
     eps_str = f"{curr_sym}{eps_val:.2f}" if pd.notna(eps_val) else "N/A"
-    render_metric_block(c3, "EPS", eps_str, 
+    render_metric_block(c3, "7. EPS", eps_str, 
                         df_slice['EPS'], c_income)
                         
     with c4: st.empty()
@@ -395,10 +395,10 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
+    render_metric_block(c1, "8. Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
                         df_slice['Operating Cash Flow'], c_cash)
                         
-    render_metric_block(c2, "Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
+    render_metric_block(c2, "9. Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
                         df_slice['Free Cash Flow'], c_cash)
     
     with c3: st.empty()
