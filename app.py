@@ -147,7 +147,6 @@ def process_historical_data(raw_data):
         length = len(dates)
         def align(arr, l): return (arr + [None]*(l-len(arr)))[:l] if len(arr) < l else arr[:l]
 
-        # Use "Operating Income (EBIT)" as column name here
         df = pd.DataFrame({
             "Revenue": align(rev, length),
             "Gross Profit": align(gp, length),
@@ -162,8 +161,19 @@ def process_historical_data(raw_data):
         }, index=[str(d).split('-')[0] for d in dates])
 
         # Derived Metrics
-        # NOPAT FIX: Standard 21% Tax Rate Assumption (EBIT * 0.79)
-        df['NOPAT'] = df['Operating Income (EBIT)'] * (1 - 0.21)
+        # NOPAT FIX: Use actual tax but clamp to 0 (Operating Income - max(Tax, 0))
+        # This handles cases where companies have low effective tax rates (raising NOPAT closer to Net Income)
+        # while preventing NOPAT > EBIT in cases of negative tax benefits.
+        
+        # 1. Ensure tax is treated numerically
+        tax_series = df['Income Tax'].fillna(0)
+        
+        # 2. Calculate NOPAT
+        df['NOPAT'] = np.where(
+            df['Operating Income (EBIT)'].notna(),
+            df['Operating Income (EBIT)'] - tax_series.apply(lambda x: max(x, 0)),
+            None
+        )
         
         df['Free Cash Flow'] = np.where(df['FCF Reported'].notna() & (df['FCF Reported'] != 0), 
                              df['FCF Reported'], 
@@ -195,10 +205,11 @@ def process_historical_data(raw_data):
         }
         
         op_ttm = ttm_row.get("Operating Income (EBIT)")
+        tax_ttm = ttm_row.get("Income Tax") or 0
         
-        # TTM NOPAT FIX
         if op_ttm is not None:
-            ttm_row['NOPAT'] = op_ttm * (1 - 0.21)
+            # Same logic for TTM: EBIT - max(Tax, 0)
+            ttm_row['NOPAT'] = op_ttm - max(tax_ttm, 0)
         else:
             ttm_row['NOPAT'] = None
             
