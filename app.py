@@ -23,7 +23,7 @@ SHORT_DESCRIPTIONS = {
     "5. NOPAT": "Net Operating Profit After Tax. Shows potential cash yield if the company had no debt.",
     "6. Income Tax": "The amount paid to the government. A negative value indicates a tax benefit (refund/credit).",
     "7. Net Income": "The bottom line. Profit left for shareholders after all expenses, interest, and taxes.",
-    "8. EPS": "Net Income divided by shares outstanding. Shows how much profit is allocated to each share.",
+    "8. EPS (Diluted)": "Net Income divided by shares outstanding (including convertibles/options). Shows profit allocated to each share.",
     "9. Operating Cash Flow": "Cash generated from actual day-to-day business operations. Adjusts Net Income for non-cash items.",
     "10. Free Cash Flow": "Operating Cash Flow minus CapEx. The truly 'free' cash available for dividends or reinvestment."
 }
@@ -36,7 +36,7 @@ FULL_DEFINITIONS = {
     "5. NOPAT": "NOPAT (Net Operating Profit After Tax) represents the cash profit from operations. It is calculated as <b>Operating Income (EBIT) − Reported Income Tax</b>.<br><br><b>Key Scenarios:</b><br>• <b>If company pays taxes:</b> NOPAT is <i>lower</i> than EBIT.<br>• <b>If company gets a tax refund:</b> NOPAT is <i>higher</i> than EBIT. A negative tax expense (benefit) increases the after-tax profit.<br>• <b>If Net Income > NOPAT:</b> This usually happens for cash-rich companies (like Nvidia) that earn significant Interest Income, which is added to the bottom line but not to operating profit.",
     "6. Income Tax": "Income Tax represents the tax expense recognized in the income statement. A positive number indicates a tax expense paid to the government, reducing Net Income. A negative number indicates a tax benefit (or credit), which increases Net Income. This line item explains a significant portion of the difference between Operating Income and Net Income.",
     "7. Net Income": "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.",
-    "8. EPS": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
+    "8. EPS (Diluted)": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
     "9. Operating Cash Flow": "Operating cash flow is the cash from operations that actually comes into or leaves the company from its day-to-day business activities. It adjusts net income for non-cash items and changes in working capital, so sales made on credit (like unpaid invoices in accounts receivable) increase net income but do not increase operating cash flow until the cash is collected.",
     "10. Free Cash Flow": "Free cash flow (FCF) is the cash left over after a company pays for its operating costs and necessary investments in equipment and machinery (CapEx). It represents the truly free money that can be used to pay dividends, buy back shares, or reinvest in growth without hurting the existing business, and because it’s calculated after interest in most cases, it shows how much cash is left for shareholders after servicing debt."
 }
@@ -155,7 +155,7 @@ def process_historical_data(raw_data):
             "Operating Income (EBIT)": align(op, length),
             "EBITDA": align(ebitda, length),
             "Net Income": align(ni, length),
-            "EPS": align(eps, length),
+            "EPS (Diluted)": align(eps, length),
             "Income Tax": align(tax, length),
             "Operating Cash Flow": align(cfo, length),
             "CapEx": align(capex, length),
@@ -193,7 +193,7 @@ def process_historical_data(raw_data):
             "Operating Income (EBIT)": get_ttm_sum(q_op),
             "EBITDA": get_ttm_sum(q_ebitda),
             "Net Income": get_ttm_sum(q_ni),
-            "EPS": get_ttm_sum(q_eps),
+            "EPS (Diluted)": get_ttm_sum(q_eps),
             "Income Tax": get_ttm_sum(q_tax),
             "Operating Cash Flow": get_ttm_sum(q_cfo),
             "CapEx": get_ttm_sum(q_capex),
@@ -219,7 +219,7 @@ def process_historical_data(raw_data):
         # Keep 'Income Tax' for display
         cols_to_keep = [
             "Revenue", "Gross Profit", "EBITDA", "Operating Income (EBIT)", 
-            "NOPAT", "Income Tax", "Net Income", "EPS", 
+            "NOPAT", "Income Tax", "Net Income", "EPS (Diluted)", 
             "Operating Cash Flow", "Free Cash Flow"
         ]
         return df_final[cols_to_keep], None
@@ -391,10 +391,10 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     render_metric_block(c3, "7. Net Income", format_currency(row['Net Income'], curr_sym), 
                         df_slice['Net Income'], c_income)
                         
-    eps_val = row['EPS']
+    eps_val = row['EPS (Diluted)']
     eps_str = f"{curr_sym}{eps_val:.2f}" if pd.notna(eps_val) else "N/A"
-    render_metric_block(c4, "8. EPS", eps_str, 
-                        df_slice['EPS'], c_income)
+    render_metric_block(c4, "8. EPS (Diluted)", eps_str, 
+                        df_slice['EPS (Diluted)'], c_income)
 
     st.markdown("---")
 
