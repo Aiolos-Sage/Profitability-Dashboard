@@ -19,12 +19,13 @@ SHORT_DESCRIPTIONS = {
     "1. Revenue": "Top-line sales indicate market demand for the product or service and the size of the operation.",
     "2. Gross Profit": "Revenue minus Cost of Goods Sold (COGS). Measures production efficiency.",
     "3. EBITDA": "Proxy for operational cash flow before financing effects (Interest, Taxes, Depreciation, Amortization).",
-    "4. Operating Income (EBIT)": "Operating income (EBIT) is what a company earns from its core business after subtracting operating expenses, but before interest and taxes (and after depreciation and amortization).",
+    "4. Operating Income (EBIT)": "Operating income (EBIT) is what a company earns from its core business after subtracting operating expenses.",
     "5. NOPAT": "Net Operating Profit After Tax. Shows potential cash yield if the company had no debt.",
-    "6. Net Income": "The bottom line. Profit left for shareholders after all expenses, interest, and taxes.",
-    "7. EPS": "Net Income divided by shares outstanding. Shows how much profit is allocated to each share.",
-    "8. Operating Cash Flow": "Cash generated from actual day-to-day business operations. Adjusts Net Income for non-cash items.",
-    "9. Free Cash Flow": "Operating Cash Flow minus CapEx. The truly 'free' cash available for dividends or reinvestment."
+    "6. Income Tax": "The amount paid to the government. A negative value indicates a tax benefit (refund/credit).",
+    "7. Net Income": "The bottom line. Profit left for shareholders after all expenses, interest, and taxes.",
+    "8. EPS": "Net Income divided by shares outstanding. Shows how much profit is allocated to each share.",
+    "9. Operating Cash Flow": "Cash generated from actual day-to-day business operations. Adjusts Net Income for non-cash items.",
+    "10. Free Cash Flow": "Operating Cash Flow minus CapEx. The truly 'free' cash available for dividends or reinvestment."
 }
 
 FULL_DEFINITIONS = {
@@ -33,10 +34,11 @@ FULL_DEFINITIONS = {
     "3. EBITDA": "EBITDA stands for Earnings Before Interest, Taxes, Depreciation, and Amortization. It is calculated as operating profit plus depreciation and amortization, and is often used as a proxy for cash flow because non-cash charges like depreciation do not represent actual cash outflows. This makes EBITDA a popular metric for valuing companies, especially in tech and infrastructure sectors, as it focuses on operational cash generation before financing and tax effects.",
     "4. Operating Income (EBIT)": "Operating income (EBIT) is what a company earns from its core business after subtracting operating expenses, but before interest and taxes (and after depreciation and amortization). Operating expenses include items like G&A (General and Administrative)—indirect costs such as office rent, utilities, administrative salaries, and insurance—and R&D (Research and Development), which covers the costs of creating or improving products, such as engineers’ salaries, lab work, and testing. Because it strips out taxes and financing choices, EBIT is a useful measure of the underlying profitability of the core business.",
     "5. NOPAT": "NOPAT shows the capital allocation efficiency, or how much profit a business makes from its operations after an estimate of taxes, but without including the effects of debt or interest. It is calculated using the formula: NOPAT = EBIT × (1 − Tax Rate). It allows investors to compare companies with different levels of debt (leverage) on an apples-to-apples basis. This “clean” operating profit is commonly used in return metrics like ROIC to assess how efficiently a company uses its capital to generate profits.",
-    "6. Net Income": "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.",
-    "7. EPS": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
-    "8. Operating Cash Flow": "Operating cash flow is the cash from operations that actually comes into or leaves the company from its day-to-day business activities. It adjusts net income for non-cash items and changes in working capital, so sales made on credit (like unpaid invoices in accounts receivable) increase net income but do not increase operating cash flow until the cash is collected.",
-    "9. Free Cash Flow": "Free cash flow (FCF) is the cash left over after a company pays for its operating costs and necessary investments in equipment and machinery (CapEx). It represents the truly free money that can be used to pay dividends, buy back shares, or reinvest in growth without hurting the existing business, and because it’s calculated after interest in most cases, it shows how much cash is left for shareholders after servicing debt."
+    "6. Income Tax": "Income Tax represents the tax expense recognized in the income statement. A positive number indicates a tax expense paid to the government, reducing Net Income. A negative number indicates a tax benefit (or credit), which increases Net Income. This line item explains a significant portion of the difference between Operating Income and Net Income.",
+    "7. Net Income": "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.",
+    "8. EPS": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
+    "9. Operating Cash Flow": "Operating cash flow is the cash from operations that actually comes into or leaves the company from its day-to-day business activities. It adjusts net income for non-cash items and changes in working capital, so sales made on credit (like unpaid invoices in accounts receivable) increase net income but do not increase operating cash flow until the cash is collected.",
+    "10. Free Cash Flow": "Free cash flow (FCF) is the cash left over after a company pays for its operating costs and necessary investments in equipment and machinery (CapEx). It represents the truly free money that can be used to pay dividends, buy back shares, or reinvest in growth without hurting the existing business, and because it’s calculated after interest in most cases, it shows how much cash is left for shareholders after servicing debt."
 }
 
 # --- SESSION STATE ---
@@ -160,15 +162,8 @@ def process_historical_data(raw_data):
             "FCF Reported": align(fcf, length)
         }, index=[str(d).split('-')[0] for d in dates])
 
-        # Derived Metrics
-        # NOPAT FIX: Use actual tax but clamp to 0 (Operating Income - max(Tax, 0))
-        # This handles cases where companies have low effective tax rates (raising NOPAT closer to Net Income)
-        # while preventing NOPAT > EBIT in cases of negative tax benefits.
-        
-        # 1. Ensure tax is treated numerically
+        # Derived Metrics - NOPAT Logic
         tax_series = df['Income Tax'].fillna(0)
-        
-        # 2. Calculate NOPAT
         df['NOPAT'] = np.where(
             df['Operating Income (EBIT)'].notna(),
             df['Operating Income (EBIT)'] - tax_series.apply(lambda x: max(x, 0)),
@@ -208,7 +203,6 @@ def process_historical_data(raw_data):
         tax_ttm = ttm_row.get("Income Tax") or 0
         
         if op_ttm is not None:
-            # Same logic for TTM: EBIT - max(Tax, 0)
             ttm_row['NOPAT'] = op_ttm - max(tax_ttm, 0)
         else:
             ttm_row['NOPAT'] = None
@@ -221,7 +215,8 @@ def process_historical_data(raw_data):
         df_ttm = pd.DataFrame([ttm_row], index=["TTM"])
         df_final = pd.concat([df, df_ttm])
         
-        cols_to_keep = ["Revenue", "Gross Profit", "EBITDA", "Operating Income (EBIT)", "NOPAT", "Net Income", "EPS", "Operating Cash Flow", "Free Cash Flow"]
+        # Keep 'Income Tax' for display
+        cols_to_keep = ["Revenue", "Gross Profit", "EBITDA", "Operating Income (EBIT)", "NOPAT", "Income Tax", "Net Income", "EPS", "Operating Cash Flow", "Free Cash Flow"]
         return df_final[cols_to_keep], None
 
     except Exception as e:
@@ -380,20 +375,21 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
 
     st.markdown("---")
     
-    # Row 2
+    # Row 2 (Updated with Income Tax)
     c1, c2, c3, c4 = st.columns(4)
     render_metric_block(c1, "5. NOPAT", format_currency(row['NOPAT'], curr_sym), 
                         df_slice['NOPAT'], c_income)
+    
+    render_metric_block(c2, "6. Income Tax", format_currency(row['Income Tax'], curr_sym), 
+                        df_slice['Income Tax'], c_income)
                         
-    render_metric_block(c2, "6. Net Income", format_currency(row['Net Income'], curr_sym), 
+    render_metric_block(c3, "7. Net Income", format_currency(row['Net Income'], curr_sym), 
                         df_slice['Net Income'], c_income)
                         
     eps_val = row['EPS']
     eps_str = f"{curr_sym}{eps_val:.2f}" if pd.notna(eps_val) else "N/A"
-    render_metric_block(c3, "7. EPS", eps_str, 
+    render_metric_block(c4, "8. EPS", eps_str, 
                         df_slice['EPS'], c_income)
-                        
-    with c4: st.empty()
 
     st.markdown("---")
 
@@ -402,10 +398,10 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
-    render_metric_block(c1, "8. Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
+    render_metric_block(c1, "9. Operating Cash Flow", format_currency(row['Operating Cash Flow'], curr_sym), 
                         df_slice['Operating Cash Flow'], c_cash)
                         
-    render_metric_block(c2, "9. Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
+    render_metric_block(c2, "10. Free Cash Flow", format_currency(row['Free Cash Flow'], curr_sym), 
                         df_slice['Free Cash Flow'], c_cash)
     
     with c3: st.empty()
