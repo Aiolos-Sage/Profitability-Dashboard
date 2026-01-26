@@ -33,7 +33,7 @@ FULL_DEFINITIONS = {
     "2. Gross Profit": "Gross profit equals revenue minus the cost of goods sold. It measures a company’s production efficiency—if it’s negative, the company loses money on each product before covering overhead expenses like rent or salaries. COGS (cost of goods sold) includes raw materials, manufacturing costs, and depreciation on production assets such as machinery, factory buildings, production robots, tools and vehicles used in the manufacturing process.",
     "3. EBITDA": "EBITDA stands for Earnings Before Interest, Taxes, Depreciation, and Amortization. It is calculated as operating profit plus depreciation and amortization, and is often used as a proxy for cash flow because non-cash charges like depreciation do not represent actual cash outflows. This makes EBITDA a popular metric for valuing companies, especially in tech and infrastructure sectors, as it focuses on operational cash generation before financing and tax effects.",
     "4. Operating Income (EBIT)": "Operating income (EBIT) is what a company earns from its core business after subtracting operating expenses, but before interest and taxes (and after depreciation and amortization). Operating expenses include items like G&A (General and Administrative)—indirect costs such as office rent, utilities, administrative salaries, and insurance—and R&D (Research and Development), which covers the costs of creating or improving products, such as engineers’ salaries, lab work, and testing. Because it strips out taxes and financing choices, EBIT is a useful measure of the underlying profitability of the core business.",
-    "5. NOPAT": "NOPAT (Net Operating Profit After Tax) shows the potential cash yield if the company had no debt. It is calculated as <b>Operating Income (EBIT) − Income Tax</b>.<br><br><b>Relation to Net Income:</b><br>• <b>Normally:</b> NOPAT is <i>higher</i> than Net Income because Net Income has interest expenses deducted from it.<br>• <b>Cash-Rich Companies (e.g. Nvidia):</b> NOPAT can be <i>lower</i> than Net Income. This happens when a company has no debt and earns significant interest income on its cash pile, which is added to Net Income but not NOPAT.",
+    "5. NOPAT": "NOPAT (Net Operating Profit After Tax) represents the cash profit from operations. It is calculated as <b>Operating Income (EBIT) − Reported Income Tax</b>.<br><br><b>Key Scenarios:</b><br>• <b>If company pays taxes:</b> NOPAT is <i>lower</i> than EBIT.<br>• <b>If company gets a tax refund:</b> NOPAT is <i>higher</i> than EBIT. A negative tax expense (benefit) increases the after-tax profit.<br>• <b>If Net Income > NOPAT:</b> This usually happens for cash-rich companies (like Nvidia) that earn significant Interest Income, which is added to the bottom line but not to operating profit.",
     "6. Income Tax": "Income Tax represents the tax expense recognized in the income statement. A positive number indicates a tax expense paid to the government, reducing Net Income. A negative number indicates a tax benefit (or credit), which increases Net Income. This line item explains a significant portion of the difference between Operating Income and Net Income.",
     "7. Net Income": "Net income is the profit left for shareholders after paying all expenses, including suppliers, employees, interest to banks, and taxes. It is the official earnings figure used in metrics like the Price-to-Earnings (P/E) ratio and is influenced by the company’s interest costs, unlike EBIT or NOPAT.",
     "8. EPS": "Earnings per share (EPS) is calculated by dividing net income by the number of common shares outstanding, using only the current, actual shares in existence. It shows how much of today’s profit is allocated to each existing share an investor owns.",
@@ -163,10 +163,11 @@ def process_historical_data(raw_data):
         }, index=[str(d).split('-')[0] for d in dates])
 
         # Derived Metrics - NOPAT Logic
-        tax_series = df['Income Tax'].fillna(0)
+        # NOPAT = Operating Income - Reported Income Tax
+        # If Income Tax is negative (benefit), NOPAT > EBIT. This is accurate to the reported figures.
         df['NOPAT'] = np.where(
             df['Operating Income (EBIT)'].notna(),
-            df['Operating Income (EBIT)'] - tax_series.apply(lambda x: max(x, 0)),
+            df['Operating Income (EBIT)'] - df['Income Tax'].fillna(0),
             None
         )
         
@@ -202,8 +203,9 @@ def process_historical_data(raw_data):
         op_ttm = ttm_row.get("Operating Income (EBIT)")
         tax_ttm = ttm_row.get("Income Tax") or 0
         
+        # TTM NOPAT (Unclamped)
         if op_ttm is not None:
-            ttm_row['NOPAT'] = op_ttm - max(tax_ttm, 0)
+            ttm_row['NOPAT'] = op_ttm - tax_ttm
         else:
             ttm_row['NOPAT'] = None
             
