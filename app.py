@@ -164,7 +164,6 @@ def process_historical_data(raw_data):
 
         # Derived Metrics - NOPAT Logic
         # NOPAT = Operating Income - Reported Income Tax
-        # If Income Tax is negative (benefit), NOPAT > EBIT. This is accurate to the reported figures.
         df['NOPAT'] = np.where(
             df['Operating Income (EBIT)'].notna(),
             df['Operating Income (EBIT)'] - df['Income Tax'].fillna(0),
@@ -362,7 +361,7 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     # --- RENDER SECTIONS ---
     
     # 1. Income Statement
-    st.subheader("📊 Income Statement")
+    st.subheader(f"📊 Income Statement ({end_period})")
     c_income = "#3b82f6"
     
     # Row 1
@@ -400,7 +399,7 @@ if st.session_state.data_loaded and st.session_state.processed_df is not None:
     st.markdown("---")
 
     # 2. Cash Flow
-    st.subheader("💸 Cash Flow")
+    st.subheader(f"💸 Cash Flow ({end_period})")
     c_cash = "#10b981"
     
     c1, c2, c3, c4 = st.columns(4)
