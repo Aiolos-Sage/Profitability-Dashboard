@@ -161,9 +161,8 @@ def process_historical_data(raw_data):
         }, index=[str(d).split('-')[0] for d in dates])
 
         # Derived Metrics
-        df['NOPAT'] = np.where(df['Operating Profit (EBIT)'].notna() & df['Income Tax'].notna(), 
-                               df['Operating Profit (EBIT)'] - df['Income Tax'],
-                               df['Operating Profit (EBIT)'] * (1 - 0.21)) 
+        # NOPAT FIX: Standard 21% Tax Rate Assumption to prevent negative tax anomalies
+        df['NOPAT'] = df['Operating Profit (EBIT)'] * (1 - 0.21)
         
         df['Free Cash Flow'] = np.where(df['FCF Reported'].notna() & (df['FCF Reported'] != 0), 
                              df['FCF Reported'], 
@@ -195,11 +194,9 @@ def process_historical_data(raw_data):
         }
         
         op_ttm = ttm_row.get("Operating Profit (EBIT)")
-        tax_ttm = ttm_row.get("Income Tax")
         
-        if op_ttm is not None and tax_ttm is not None:
-            ttm_row['NOPAT'] = op_ttm - tax_ttm
-        elif op_ttm is not None:
+        # TTM NOPAT FIX
+        if op_ttm is not None:
             ttm_row['NOPAT'] = op_ttm * (1 - 0.21)
         else:
             ttm_row['NOPAT'] = None
