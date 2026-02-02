@@ -156,7 +156,13 @@ def process_historical_data(raw_data):
         capex = safe_get_list(annual, ["capex", "capital_expenditures"])
         fcf = safe_get_list(annual, ["fcf", "free_cash_flow"])
         
-        # Balance Sheet items for Ratios
+        # Fetch Pre-Calculated Annual Ratios from API if available
+        # These are accurate for historical years as they are calculated by QuickFS methodology (likely using avg capital)
+        roe_list = safe_get_list(annual, ["return_on_equity", "roe"])
+        roic_list = safe_get_list(annual, ["return_on_invested_capital", "roic"])
+        roce_list = safe_get_list(annual, ["return_on_capital_employed", "roce"])
+        
+        # Balance Sheet items (Required for CROIC and TTM Ratio Calculations)
         equity = safe_get_list(annual, ["total_equity", "total_stockholders_equity"])
         assets = safe_get_list(annual, ["total_assets"])
         curr_liab = safe_get_list(annual, ["total_current_liabilities"])
@@ -178,6 +184,13 @@ def process_historical_data(raw_data):
             "Operating Cash Flow": align(cfo, length),
             "CapEx": align(capex, length),
             "FCF Reported": align(fcf, length),
+            
+            # Ratios from API
+            "Return on Equity (ROE)": align(roe_list, length),
+            "Return on Invested Capital (ROIC)": align(roic_list, length),
+            "Return on Capital Employed (ROCE)": align(roce_list, length),
+            
+            # Balance Sheet for CROIC
             "Total Equity": align(equity, length),
             "Total Assets": align(assets, length),
             "Current Liabilities": align(curr_liab, length),
@@ -197,26 +210,16 @@ def process_historical_data(raw_data):
                              df['Operating Cash Flow'] - df['CapEx'].abs())
                              
         # --- RATIO CALCULATIONS ---
-        # 11. ROE = Net Income / Equity
-        # We fillna(0) for denominator or let it result in inf/nan, handled by display logic
-        df['Return on Equity (ROE)'] = df['Net Income'] / df['Total Equity']
+        # NOTE: ROE, ROIC, ROCE are already fetched from API. We only calculate CROIC here.
         
-        # Invested Capital = Total Debt + Total Equity
+        # Invested Capital = Total Debt + Total Equity (For CROIC)
         df['Invested Capital'] = df['Total Debt'].fillna(0) + df['Total Equity'].fillna(0)
-        
-        # 12. ROIC = NOPAT / Invested Capital
-        df['Return on Invested Capital (ROIC)'] = df['NOPAT'] / df['Invested Capital']
-        
-        # Capital Employed = Total Assets - Current Liabilities
-        df['Capital Employed'] = df['Total Assets'] - df['Current Liabilities']
-        
-        # 13. ROCE = EBIT / Capital Employed
-        df['Return on Capital Employed (ROCE)'] = df['Operating Income (EBIT)'] / df['Capital Employed']
         
         # 14. CROIC = FCF / Invested Capital
         df['Cash Return on Invested Capital (CROIC)'] = df['Free Cash Flow'] / df['Invested Capital']
 
         # 2. Handle TTM
+        # For TTM, we usually calculate manually because API ratio lists typically end at last FY.
         q_rev = safe_get_list(quarterly, ["revenue"])
         q_gp = safe_get_list(quarterly, ["gross_profit"])
         q_op = safe_get_list(quarterly, ["operating_income"])
@@ -267,7 +270,7 @@ def process_historical_data(raw_data):
         else:
             ttm_row['Free Cash Flow'] = None
             
-        # TTM Ratios
+        # TTM Ratios (Manual Calculation required for TTM row)
         inv_cap = (ttm_row['Total Debt'] or 0) + (ttm_row['Total Equity'] or 0)
         cap_emp = (ttm_row['Total Assets'] or 0) - (ttm_row['Current Liabilities'] or 0)
         
